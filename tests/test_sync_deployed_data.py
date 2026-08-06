@@ -122,3 +122,37 @@ def test_validates_every_file_before_overwriting_local_data(tmp_path: Path) -> N
     assert read_json(tmp_path / "stocks.json") == local_summary
     assert read_json(tmp_path / "PLTR.json")[-1]["time"] == "2026-08-04"
     assert read_json(tmp_path / "metadata.json") == {"generatedAt": "local"}
+
+
+def test_merges_newer_common_symbols_and_keeps_new_local_symbols(tmp_path: Path) -> None:
+    local_summaries = [
+        make_summary("PLTR", "2026-08-05"),
+        make_summary("GOOGL", "2026-08-05"),
+    ]
+    write_json(tmp_path / "stocks.json", local_summaries)
+    write_json(tmp_path / "PLTR.json", make_records("2026-08-05"))
+    write_json(tmp_path / "GOOGL.json", make_records("2026-08-05"))
+    write_json(tmp_path / "metadata.json", {"generatedAt": "local"})
+
+    responses = {
+        f"{BASE_URL}/stocks.json": [
+            make_summary("PLTR", "2026-08-06"),
+            make_summary("NVDA", "2026-08-06"),
+        ],
+        f"{BASE_URL}/PLTR.json": make_records("2026-08-06"),
+        f"{BASE_URL}/metadata.json": {"generatedAt": "deployed"},
+    }
+
+    restored = restore_latest_deployed_data(
+        tmp_path,
+        fetch_json=responses.__getitem__,
+        base_url=BASE_URL,
+    )
+
+    assert restored is True
+    assert [item["symbol"] for item in read_json(tmp_path / "stocks.json")] == [
+        "PLTR",
+        "GOOGL",
+    ]
+    assert read_json(tmp_path / "PLTR.json")[-1]["time"] == "2026-08-06"
+    assert read_json(tmp_path / "GOOGL.json")[-1]["time"] == "2026-08-05"

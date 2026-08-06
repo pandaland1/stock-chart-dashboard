@@ -140,12 +140,25 @@ def restore_latest_deployed_data(
     deployed_payload = fetch_json(f"{base_url}/stocks.json")
     deployed_summaries, deployed_dates = _validate_summaries(deployed_payload, "배포")
 
-    if set(local_dates) != set(deployed_dates):
-        raise DeployedDataError("로컬과 배포 데이터의 종목 구성이 달라 자동 병합할 수 없습니다.")
+    common_symbols = set(local_dates).intersection(deployed_dates)
+    local_only_symbols = set(local_dates).difference(deployed_dates)
+    deployed_only_symbols = set(deployed_dates).difference(local_dates)
+
+    if local_only_symbols:
+        LOGGER.info(
+            "새로 추가된 로컬 종목은 그대로 유지합니다: %s",
+            ", ".join(sorted(local_only_symbols)),
+        )
+    if deployed_only_symbols:
+        LOGGER.info(
+            "로컬 설정에서 제거된 배포 종목은 복원하지 않습니다: %s",
+            ", ".join(sorted(deployed_only_symbols)),
+        )
 
     older_symbols: list[str] = []
     newer_symbols: list[str] = []
-    for symbol, local_date in local_dates.items():
+    for symbol in common_symbols:
+        local_date = local_dates[symbol]
         deployed_date = deployed_dates[symbol]
         if local_date is not None and deployed_date is None:
             older_symbols.append(symbol)
@@ -171,9 +184,11 @@ def restore_latest_deployed_data(
         LOGGER.info("로컬과 배포 데이터의 최신 거래일이 같아 로컬 데이터를 유지합니다.")
         return False
 
+    deployed_summary_by_symbol = {
+        summary["symbol"]: summary for summary in deployed_summaries
+    }
     deployed_records: dict[str, list[dict[str, Any]]] = {}
-    for summary in deployed_summaries:
-        symbol = summary["symbol"]
+    for symbol in newer_symbols:
         trade_date = deployed_dates[symbol]
         if trade_date is None:
             continue
@@ -186,7 +201,13 @@ def restore_latest_deployed_data(
 
     for symbol, records in deployed_records.items():
         write_json(data_dir / f"{symbol}.json", records)
-    write_json(data_dir / "stocks.json", deployed_summaries)
+    merged_summaries = [
+        deployed_summary_by_symbol.get(summary["symbol"], summary)
+        if summary["symbol"] in newer_symbols
+        else summary
+        for summary in local_summaries
+    ]
+    write_json(data_dir / "stocks.json", merged_summaries)
     write_json(data_dir / "metadata.json", deployed_metadata)
 
     LOGGER.info(

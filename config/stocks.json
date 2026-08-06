@@ -1,9 +1,5 @@
 [
   {
-    "symbol": "PLTR",
-    "name": "Palantir Technologies"
-  },
-  {
     "symbol": "NVDA",
     "name": "NVIDIA"
   },
@@ -16,7 +12,23 @@
     "name": "Microsoft"
   },
   {
+    "symbol": "PLTR",
+    "name": "Palantir Technologies"
+  },
+  {
+    "symbol": "GOOGL",
+    "name": "Alphabet"
+  },
+  {
+    "symbol": "META",
+    "name": "Meta Platforms"
+  },
+  {
     "symbol": "TSLA",
     "name": "Tesla"
+  },
+  {
+    "symbol": "QQQ",
+    "name": "Invesco QQQ Trust"
   }
 ]

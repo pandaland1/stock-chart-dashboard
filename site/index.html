@@ -5,13 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="미국 주식 일봉과 SMA120, SMA200, VWMA100, 볼린저 밴드를 확인하는 개인용 차트"
+      content="미국 주식 일봉·주봉·월봉과 매물대, 종목 비교, SMA120, SMA200, VWMA100, 볼린저 밴드를 확인하는 개인용 차트"
     />
     <meta name="color-scheme" content="dark light" />
-    <title>Market Lens · 미국 주식 일봉 차트</title>
-    <link rel="stylesheet" href="./assets/style.css?v=7" />
+    <title>Market Lens · 미국 주식 차트</title>
+    <link rel="stylesheet" href="./assets/style.css?v=8" />
     <script defer src="./assets/vendor/lightweight-charts.standalone.production.js"></script>
-    <script defer src="./assets/app.js?v=7"></script>
+    <script defer src="./assets/chart-utils.js?v=1"></script>
+    <script defer src="./assets/app.js?v=8"></script>
   </head>
   <body>
     <a class="skip-link" href="#stock-chart">차트로 바로가기</a>
@@ -23,7 +24,7 @@
         </span>
         <div>
           <h1>Market Lens</h1>
-          <p>미국 주식 일봉 차트</p>
+          <p>미국 주식 멀티 타임프레임 차트</p>
         </div>
       </div>
 
@@ -59,9 +60,14 @@
 
         <div class="tool-groups">
           <div class="interval-and-range">
-            <p class="interval-badge" aria-label="차트 간격 1일 일봉">
-              <strong>1D</strong><span>일봉</span>
-            </p>
+            <div class="interval-picker">
+              <span class="control-label">봉 간격</span>
+              <div class="segmented-control interval-control" role="group" aria-label="봉 간격">
+                <button type="button" data-interval="1D" class="is-active" aria-pressed="true">1D</button>
+                <button type="button" data-interval="1W" aria-pressed="false">1W</button>
+                <button type="button" data-interval="1M" aria-pressed="false">1M</button>
+              </div>
+            </div>
 
             <div class="range-picker">
               <span class="control-label">화면 범위</span>
@@ -76,6 +82,26 @@
           </div>
 
           <div class="chart-actions" role="group" aria-label="차트 도구">
+            <label class="scale-format-control" for="scale-mode-select">
+              <span>축 형식</span>
+              <select id="scale-mode-select">
+                <option value="normal">일반</option>
+                <option value="logarithmic">로그</option>
+                <option value="percentage">%</option>
+                <option value="indexed">100 기준</option>
+              </select>
+            </label>
+            <button id="volume-profile-toggle" type="button" aria-pressed="true">
+              <span aria-hidden="true">▥</span> 매물대
+            </button>
+            <button
+              id="compare-settings-toggle"
+              type="button"
+              aria-expanded="false"
+              aria-controls="compare-settings"
+            >
+              <span aria-hidden="true">⇄</span> 종목 비교 <b id="compare-count">0</b>
+            </button>
             <button id="auto-fit-button" type="button">
               <span aria-hidden="true">⌁</span> 자동 맞춤
             </button>
@@ -91,6 +117,34 @@
 
           <p id="data-range" class="data-range">1D 일봉 데이터를 확인하고 있습니다.</p>
         </div>
+
+        <aside
+          id="compare-settings"
+          class="compare-settings"
+          aria-label="PLTR 기준 종목 비교 설정"
+          hidden
+        >
+          <header>
+            <div>
+              <strong>종목 비교</strong>
+              <span>PLTR을 기준으로 같은 시작일의 등락률을 비교합니다.</span>
+            </div>
+            <button id="compare-settings-close" type="button" aria-label="종목 비교 설정 닫기">×</button>
+          </header>
+          <div class="compare-add-row">
+            <label for="compare-symbol-select">비교 종목</label>
+            <select id="compare-symbol-select" disabled>
+              <option value="">종목을 선택하세요</option>
+            </select>
+            <button id="compare-add-button" type="button" disabled>+ 종목 추가</button>
+          </div>
+          <div id="compare-symbol-list" class="compare-symbol-list">
+            <p class="compare-empty">추가한 비교 종목이 없습니다.</p>
+          </div>
+          <p id="compare-message" class="compare-message" role="status" aria-live="polite">
+            기본 종목에서 여러 개를 추가하거나 삭제할 수 있습니다.
+          </p>
+        </aside>
 
         <aside
           id="indicator-settings"
@@ -276,6 +330,8 @@
             </button>
           </div>
 
+          <div id="comparison-legend" class="comparison-legend" hidden></div>
+
           <div class="crosshair-panel" aria-live="polite">
             <strong id="cursor-date">최근 거래일</strong>
             <dl>
@@ -300,8 +356,11 @@
           class="stock-chart"
           role="application"
           tabindex="0"
-          aria-label="일봉 캔들 차트. 마우스로 드래그해 상하좌우로 이동하고, Shift를 누른 채 마우스를 움직여 등락률을 측정하며, 오른쪽 가격축에서 휠을 위아래로 움직이거나 드래그해 세로 확대 및 축소할 수 있습니다."
+          aria-label="주식 캔들 차트. 일봉·주봉·월봉과 매물대 및 종목 비교를 확인하고, 마우스로 상하좌우 이동하거나 오른쪽 가격축에서 세로 확대 및 축소할 수 있습니다."
         ></div>
+
+        <div id="volume-profile" class="volume-profile" aria-hidden="false"></div>
+        <p id="volume-profile-summary" class="volume-profile-summary">매물대 계산 중</p>
 
         <div id="measurement-layer" class="measurement-layer" hidden aria-hidden="true">
           <div id="measurement-box" class="measurement-box"></div>
@@ -331,7 +390,7 @@
     <footer>
       <div>
         <strong>데이터 기준</strong>
-        <span>Yahoo Finance · 수정주가(auto_adjust=True) · 일봉</span>
+        <span>Yahoo Finance · 수정주가 · 일봉 원본을 주봉·월봉으로 집계</span>
       </div>
       <div>
         <strong>마지막 거래일</strong>

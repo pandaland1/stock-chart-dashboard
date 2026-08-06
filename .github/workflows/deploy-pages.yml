@@ -38,7 +38,9 @@ jobs:
         run: python -m pip install --disable-pip-version-check -r requirements.txt
 
       - name: Run unit tests
-        run: python -m pytest -q
+        run: |
+          python -m pytest -q
+          node --test tests/chart_utils.test.js
 
       - name: Restore newest deployed market data
         run: python -m src.sync_deployed_data

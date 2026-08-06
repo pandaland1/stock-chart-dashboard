@@ -1,19 +1,22 @@
-# Market Lens — 미국 주식 일봉 차트
+# Market Lens — 미국 주식 멀티 타임프레임 차트
 
-별도 서버와 데이터베이스 없이 미국 주식의 일봉 OHLCV와 기술적 지표를 확인하는 개인용 정적 웹사이트입니다. Python이 데이터를 JSON으로 만들고, 브라우저가 TradingView Lightweight Charts™ 5.2로 인터랙티브 차트를 렌더링합니다. GitHub Actions는 미국 증시 마감 뒤 데이터를 갱신해 GitHub Pages에 자동 배포합니다.
+별도 서버와 데이터베이스 없이 미국 주식의 일봉·주봉·월봉 OHLCV와 기술적 지표를 확인하는 개인용 정적 웹사이트입니다. Python이 일봉 데이터를 JSON으로 만들고, 브라우저가 TradingView Lightweight Charts™ 5.2로 멀티 타임프레임 차트를 렌더링합니다. GitHub Actions는 미국 증시 마감 뒤 데이터를 갱신해 GitHub Pages에 자동 배포합니다.
 
 > 이 프로젝트는 개인 학습 및 참고용입니다. 투자 판단을 위한 공식 금융 정보가 아니며 데이터의 정확성·완전성·실시간성을 보장하지 않습니다.
 
 ## 주요 기능
 
-- PLTR, NVDA, AAPL, MSFT, TSLA 기본 지원
-- 일봉 캔들 및 상승·하락 거래량
+- NVDA, AAPL, MSFT, PLTR, GOOGL, META, TSLA, QQQ 기본 지원(초기 종목은 PLTR)
+- 일봉 원본과 주봉·월봉 OHLCV 집계
+- 현재 화면 범위의 거래량을 가격 구간별로 근사한 매물대와 POC·VAH·VAL
+- PLTR을 0% 기준으로 여러 종목을 추가·삭제하는 수익률 비교
+- 가격축 일반·로그·퍼센트·100 기준 형식 전환
 - SMA120, SMA200, VWMA100
 - Bollinger Basis/Upper/Lower(20일, 표준편차 2배)
 - 지표별 최신값을 오른쪽 가격축의 색상 라벨로 표시
 - 최신 종가의 수평 점선과 종목 코드 라벨
-- 십자선 날짜의 OHLCV·지표값과 전일 종가 대비 등락률을 색상 정보 패널에서 확인
-- `1D · 일봉` 간격을 명확히 표시하고 3개월·6개월·1년·2년·전체 화면 범위 전환
+- 십자선 날짜의 OHLCV·지표값과 이전 봉 종가 대비 등락률을 색상 정보 패널에서 확인
+- `1D`, `1W`, `1M` 봉 간격과 3개월·6개월·1년·2년·전체 화면 범위 전환
 - SMA120, SMA200, VWMA100, BB Upper/Basis/Lower를 각각 표시하거나 숨김
 - 차트 위 지표명을 선택해 해당 선의 색상과 1~4px 굵기를 바로 조절(브라우저에 설정 저장)
 - 차트 본문 드래그로 상하좌우 자유 이동, 마우스/터치 확대·축소
@@ -83,6 +86,7 @@ stock-chart-dashboard/
 │   ├── index.html
 │   ├── assets/
 │   │   ├── app.js
+│   │   ├── chart-utils.js
 │   │   ├── style.css
 │   │   └── vendor/
 │   └── data/
@@ -117,6 +121,7 @@ python -m pip install -r requirements.txt
 
 ```bash
 python -m pytest -q
+node --test tests/chart_utils.test.js
 python -m src.main
 ```
 
@@ -130,7 +135,7 @@ python -m http.server 8000 --directory site
 
 ## 관심 종목 변경
 
-`config/stocks.json`만 수정합니다.
+배포 데이터에 종목을 추가하려면 `config/stocks.json`만 수정합니다.
 
 ```json
 [
@@ -145,7 +150,7 @@ python -m http.server 8000 --directory site
 ]
 ```
 
-종목 코드는 대문자로 정규화되며 영문자, 숫자, 점(`.`), 하이픈(`-`)을 허용합니다. 설정에서 종목을 추가하거나 삭제한 뒤 `python -m src.main`을 실행하면 `site/data/stocks.json`과 종목별 JSON, 웹사이트 드롭다운에 자동 반영됩니다. Python과 JavaScript에 종목 목록을 중복 작성할 필요가 없습니다.
+종목 코드는 대문자로 정규화되며 영문자, 숫자, 점(`.`), 하이픈(`-`)을 허용합니다. 설정에서 종목을 추가하거나 삭제한 뒤 `python -m src.main`을 실행하면 `site/data/stocks.json`과 종목별 JSON, 웹사이트 드롭다운 및 비교 종목 선택 목록에 자동 반영됩니다. Python과 JavaScript에 종목 목록을 중복 작성할 필요가 없습니다. 웹 화면의 `종목 비교`에서는 배포된 기본 종목을 즉시 추가하거나 삭제할 수 있으며 선택값은 브라우저에 저장됩니다.
 
 ## GitHub 저장소 생성과 최초 업로드
 
@@ -192,7 +197,10 @@ gh repo create stock-chart-dashboard --public --source=. --remote=origin --push
 ## 차트 사용법
 
 - 종목: 상단 드롭다운에서 선택
-- 봉 간격: 화면의 `1D · 일봉` 배지로 확인
+- 봉 간격: `1D`, `1W`, `1M`에서 일봉·주봉·월봉 선택
+- 매물대: `매물대` 버튼으로 표시하거나 숨김(현재 화면 범위에 맞춰 자동 재계산)
+- 가격축 형식: `축 형식`에서 일반·로그·퍼센트·100 기준 선택
+- 종목 비교: `종목 비교`에서 비교 종목을 추가·삭제(PLTR 기준 수익률)
 - 확대/축소: 마우스 휠 또는 모바일 핀치
 - 상하좌우 이동: 차트 본문을 원하는 방향으로 바로 드래그
 - 세로 확대/축소: 오른쪽 가격축 숫자 영역에서 휠 위로 확대, 휠 아래로 축소하거나 위아래로 드래그

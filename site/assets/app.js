@@ -77,6 +77,30 @@
   });
 
   const INDICATOR_STORAGE_KEY = "market-lens-indicator-settings-v1";
+  const COMPARISON_STORAGE_KEY = "market-lens-comparison-symbols-v1";
+  const SCALE_STORAGE_KEY = "market-lens-price-scale-mode-v1";
+  const COMPARISON_BASE_SYMBOL = "PLTR";
+  const COMPARISON_BASE_COLOUR = "#94a3b8";
+  const COMPARISON_COLOURS = Object.freeze([
+    "#22d3ee",
+    "#facc15",
+    "#fb7185",
+    "#a78bfa",
+    "#34d399",
+    "#f97316",
+    "#60a5fa",
+  ]);
+  const INTERVAL_LABELS = Object.freeze({
+    "1D": "일봉",
+    "1W": "주봉",
+    "1M": "월봉",
+  });
+  const SCALE_MODE_LABELS = Object.freeze({
+    normal: "일반",
+    logarithmic: "로그",
+    percentage: "퍼센트",
+    indexed: "100 기준",
+  });
   const HEX_COLOUR_PATTERN = /^#[0-9a-f]{6}$/i;
   const DEFAULT_INDICATOR_STATE = Object.freeze(
     Object.fromEntries(
@@ -123,6 +147,11 @@
       this.summaryBySymbol = new Map();
       this.recordByDate = new Map();
       this.recordIndexByDate = new Map();
+      this.rawDataBySymbol = new Map();
+      this.comparisonSeries = new Map();
+      this.comparisonColours = new Map();
+      this.initialComparisonSymbols = this.readComparisonPreferences();
+      this.profileRenderFrame = null;
       this.loadSequence = 0;
       this.isMobile = window.innerWidth <= 760;
       this.pointerInteraction = null;
@@ -134,8 +163,13 @@
       const indicatorPreferences = this.readIndicatorPreferences();
       this.state = {
         symbol: null,
+        rawData: [],
         data: [],
         selectedPeriod: "1Y",
+        selectedInterval: "1D",
+        scaleMode: this.readScalePreference(),
+        volumeProfileVisible: true,
+        comparisonSymbols: [],
         theme: this.readThemePreference(),
         volumeVisible: indicatorPreferences.volumeVisible,
         indicators: indicatorPreferences.indicators,
@@ -170,6 +204,19 @@
         themeIcon: document.querySelector(".theme-icon"),
         themeText: document.querySelector(".theme-text"),
         autoFitButton: byId("auto-fit-button"),
+        scaleModeSelect: byId("scale-mode-select"),
+        volumeProfileToggle: byId("volume-profile-toggle"),
+        volumeProfile: byId("volume-profile"),
+        volumeProfileSummary: byId("volume-profile-summary"),
+        compareSettingsToggle: byId("compare-settings-toggle"),
+        compareSettings: byId("compare-settings"),
+        compareSettingsClose: byId("compare-settings-close"),
+        compareSymbolSelect: byId("compare-symbol-select"),
+        compareAddButton: byId("compare-add-button"),
+        compareSymbolList: byId("compare-symbol-list"),
+        compareMessage: byId("compare-message"),
+        compareCount: byId("compare-count"),
+        comparisonLegend: byId("comparison-legend"),
         indicatorSettingsToggle: byId("indicator-settings-toggle"),
         indicatorSettings: byId("indicator-settings"),
         indicatorSettingsClose: byId("indicator-settings-close"),
@@ -220,6 +267,9 @@
           "Lightweight Charts 라이브러리를 불러오지 못했습니다. vendor 파일이 존재하는지 확인해 주세요."
         );
       }
+      if (!window.MarketLensUtils) {
+        throw new Error("차트 집계 도구를 불러오지 못했습니다.");
+      }
 
       this.createChart();
       const [summaries, metadata] = await Promise.all([
@@ -238,6 +288,7 @@
       );
       this.renderMetadata(metadata);
       this.populateStockSelector(summaries);
+      this.populateComparisonSelector(summaries);
 
       const firstAvailable = summaries.find((summary) => summary.dataPath);
       const defaultSummary = summaries.find(
@@ -249,8 +300,11 @@
       }
 
       this.refs.stockSelect.disabled = false;
+      this.refs.compareSymbolSelect.disabled = false;
+      this.refs.compareAddButton.disabled = true;
       this.refs.stockSelect.value = initialSymbol;
       await this.loadSymbol(initialSymbol);
+      await this.restoreComparisons();
     }
 
     createChart() {
@@ -361,6 +415,10 @@
       });
 
       this.chart.subscribeCrosshairMove((parameter) => this.handleCrosshairMove(parameter));
+      this.chart
+        .timeScale()
+        .subscribeVisibleLogicalRangeChange(() => this.scheduleVolumeProfileRender());
+      this.setScaleMode(this.state.scaleMode, { persist: false, announce: false });
       this.installResponsiveSizing();
       this.installChartInteractions();
     }
@@ -373,6 +431,10 @@
         const nextIsMobile = width <= 760;
 
         this.chart.resize(width, height);
+        document.documentElement.style.setProperty(
+          "--price-scale-width",
+          `${nextIsMobile ? 98 : 124}px`
+        );
         this.chart.priceScale("right").applyOptions({
           minimumWidth: nextIsMobile ? 98 : 124,
           alignLabels: true,
@@ -385,6 +447,7 @@
           this.isMobile = nextIsMobile;
           this.rebuildPriceLines();
         }
+        this.scheduleVolumeProfileRender();
       };
 
       if ("ResizeObserver" in window) {
@@ -483,6 +546,7 @@
 
       scale.setAutoScale(false);
       scale.setVisibleRange({ from: nextFrom, to: nextFrom + nextSpan });
+      this.scheduleVolumeProfileRender();
     }
 
     handleChartPointerDown(event) {
@@ -507,6 +571,7 @@
     handleChartPointerMove(event) {
       const rawPoint = this.getChartPoint(event);
       this.lastChartPoint = rawPoint.insidePlot ? rawPoint : null;
+      this.scheduleVolumeProfileRender();
 
       if (this.shiftKeyDown || event.shiftKey) {
         if (event.buttons & 1) this.blockNativeChartGesture(event);
@@ -614,7 +679,7 @@
         changePercent,
         barCount,
       };
-      this.refs.measurementSummary.textContent = `${startRecord.time}부터 ${endRecord.time}까지 ${barCount}개 일봉, ${sign}${this.formatPrice(Math.abs(changePercent))}퍼센트`;
+      this.refs.measurementSummary.textContent = `${startRecord.time}부터 ${endRecord.time}까지 ${barCount}개 ${INTERVAL_LABELS[this.state.selectedInterval]}, ${sign}${this.formatPrice(Math.abs(changePercent))}퍼센트`;
     }
 
     beginChartPan(event, point) {
@@ -674,6 +739,7 @@
         from: interaction.startLogicalRange.from - logicalShift,
         to: interaction.startLogicalRange.to - logicalShift,
       });
+      this.scheduleVolumeProfileRender();
     }
 
     finishPointerInteraction(pointerId) {
@@ -757,6 +823,7 @@
     resetPriceScale({ announce = true } = {}) {
       if (!this.series.candles) return;
       this.series.candles.priceScale().setAutoScale(true);
+      this.scheduleVolumeProfileRender();
       if (announce) {
         this.refs.measurementSummary.textContent = "가격축을 자동 맞춤으로 복원했습니다.";
       }
@@ -779,6 +846,7 @@
         this.shiftKeyDown = false;
         this.finishShiftMeasurement();
         this.setIndicatorSettingsOpen(false);
+        this.setCompareSettingsOpen(false);
         this.restoreInteractionHint();
       }
     }
@@ -801,6 +869,29 @@
 
       document.querySelectorAll("[data-period]").forEach((button) => {
         button.addEventListener("click", () => this.selectPeriod(button.dataset.period));
+      });
+
+      document.querySelectorAll("[data-interval]").forEach((button) => {
+        button.addEventListener("click", () => this.selectInterval(button.dataset.interval));
+      });
+
+      this.refs.scaleModeSelect.addEventListener("change", () => {
+        this.setScaleMode(this.refs.scaleModeSelect.value);
+      });
+      this.refs.volumeProfileToggle.addEventListener("click", () => {
+        this.toggleVolumeProfile();
+      });
+      this.refs.compareSettingsToggle.addEventListener("click", () => {
+        this.setCompareSettingsOpen(this.refs.compareSettings.hidden);
+      });
+      this.refs.compareSettingsClose.addEventListener("click", () => {
+        this.setCompareSettingsOpen(false);
+      });
+      this.refs.compareAddButton.addEventListener("click", () => {
+        void this.addComparisonSymbol(this.refs.compareSymbolSelect.value);
+      });
+      this.refs.compareSymbolSelect.addEventListener("change", () => {
+        this.refs.compareAddButton.disabled = !this.refs.compareSymbolSelect.value;
       });
 
       document.querySelectorAll("[data-indicator-visible]").forEach((input) => {
@@ -849,15 +940,21 @@
       });
 
       document.addEventListener("pointerdown", (event) => {
-        if (this.refs.indicatorSettings.hidden) return;
         if (
-          this.refs.indicatorSettings.contains(event.target) ||
-          this.refs.indicatorSettingsToggle.contains(event.target) ||
-          event.target.closest?.("[data-legend-toggle]")
+          !this.refs.indicatorSettings.hidden &&
+          !this.refs.indicatorSettings.contains(event.target) &&
+          !this.refs.indicatorSettingsToggle.contains(event.target) &&
+          !event.target.closest?.("[data-legend-toggle]")
         ) {
-          return;
+          this.setIndicatorSettingsOpen(false);
         }
-        this.setIndicatorSettingsOpen(false);
+        if (
+          !this.refs.compareSettings.hidden &&
+          !this.refs.compareSettings.contains(event.target) &&
+          !this.refs.compareSettingsToggle.contains(event.target)
+        ) {
+          this.setCompareSettingsOpen(false);
+        }
       });
 
       window.addEventListener("keydown", (event) => this.handleGlobalKeyDown(event));
@@ -894,20 +991,11 @@
         if (sequence !== this.loadSequence) return;
 
         const records = this.validateRecords(payload, symbol);
-        this.state.data = records;
-        this.recordByDate = new Map(records.map((record) => [record.time, record]));
-        this.recordIndexByDate = new Map(
-          records.map((record, index) => [record.time, index])
-        );
+        this.state.rawData = records;
+        this.rawDataBySymbol.set(symbol, records);
         this.clearMeasurement({ announce: false });
-        this.setSeriesData(records);
         this.renderQuote(summary, records[records.length - 1]);
-        this.renderDataRange(records);
-        this.renderLatestLegend(records[records.length - 1]);
-        this.renderCrosshairInfo(records[records.length - 1], true);
-        this.applyIndicatorStyles({ persist: false });
-        this.resetPriceScale({ announce: false });
-        this.selectPeriod(this.state.selectedPeriod, { updateButtons: true });
+        this.selectInterval(this.state.selectedInterval, { updateButtons: true });
         this.hideStatus();
       } catch (error) {
         if (sequence !== this.loadSequence) return;
@@ -939,6 +1027,39 @@
           .map((record) => ({ time: record.time, value: record[config.field] }));
         this.series[key].setData(lineData);
       });
+    }
+
+    selectInterval(interval, { updateButtons = true } = {}) {
+      if (!(interval in INTERVAL_LABELS) || !this.state.rawData.length) return;
+
+      const records = window.MarketLensUtils.aggregateRecords(this.state.rawData, interval);
+      if (!records.length) return;
+
+      this.state.selectedInterval = interval;
+      this.state.data = records;
+      this.recordByDate = new Map(records.map((record) => [record.time, record]));
+      this.recordIndexByDate = new Map(
+        records.map((record, index) => [record.time, index])
+      );
+
+      if (updateButtons) {
+        document.querySelectorAll("[data-interval]").forEach((button) => {
+          const active = button.dataset.interval === interval;
+          button.classList.toggle("is-active", active);
+          button.setAttribute("aria-pressed", String(active));
+        });
+      }
+
+      this.clearMeasurement({ announce: false });
+      this.setSeriesData(records);
+      this.renderDataRange(records);
+      this.renderLatestLegend(records[records.length - 1]);
+      this.renderCrosshairInfo(records[records.length - 1], true);
+      this.applyIndicatorStyles({ persist: false });
+      this.resetPriceScale({ announce: false });
+      this.selectPeriod(this.state.selectedPeriod, { updateButtons: true });
+      this.refreshComparisonSeries();
+      this.scheduleVolumeProfileRender();
     }
 
     rebuildPriceLines() {
@@ -1077,7 +1198,10 @@
           String(open && button.dataset.legendToggle === this.selectedIndicatorKey)
         );
       });
-      if (open) this.syncIndicatorControls();
+      if (open) {
+        this.setCompareSettingsOpen(false);
+        this.syncIndicatorControls();
+      }
     }
 
     resetIndicatorSettings() {
@@ -1143,6 +1267,404 @@
       }
     }
 
+    setScaleMode(mode, { persist = true, announce = true } = {}) {
+      if (!(mode in SCALE_MODE_LABELS) || !this.series.candles) return;
+      const library = window.LightweightCharts;
+      const modes = {
+        normal: library.PriceScaleMode.Normal,
+        logarithmic: library.PriceScaleMode.Logarithmic,
+        percentage: library.PriceScaleMode.Percentage,
+        indexed: library.PriceScaleMode.IndexedTo100,
+      };
+
+      this.state.scaleMode = mode;
+      this.refs.scaleModeSelect.value = mode;
+      this.series.candles.priceScale().applyOptions({ mode: modes[mode] });
+      this.series.candles.priceScale().setAutoScale(true);
+      if (persist) {
+        try {
+          localStorage.setItem(SCALE_STORAGE_KEY, mode);
+        } catch (error) {
+          console.warn("가격축 형식 설정을 저장하지 못했습니다.", error);
+        }
+      }
+      if (announce) {
+        this.refs.measurementSummary.textContent =
+          `가격축을 ${SCALE_MODE_LABELS[mode]} 형식으로 변경했습니다.`;
+      }
+      this.scheduleVolumeProfileRender();
+    }
+
+    readScalePreference() {
+      try {
+        const saved = localStorage.getItem(SCALE_STORAGE_KEY);
+        return saved && saved in SCALE_MODE_LABELS ? saved : "normal";
+      } catch (error) {
+        return "normal";
+      }
+    }
+
+    toggleVolumeProfile(force) {
+      this.state.volumeProfileVisible =
+        typeof force === "boolean" ? force : !this.state.volumeProfileVisible;
+      const visible = this.state.volumeProfileVisible;
+      this.refs.volumeProfileToggle.setAttribute("aria-pressed", String(visible));
+      this.refs.volumeProfile.hidden = !visible;
+      this.refs.volumeProfileSummary.hidden = !visible;
+      this.refs.volumeProfile.setAttribute("aria-hidden", String(!visible));
+      if (visible) this.scheduleVolumeProfileRender();
+      else this.refs.volumeProfile.replaceChildren();
+    }
+
+    scheduleVolumeProfileRender() {
+      if (!this.chart || this.profileRenderFrame !== null) return;
+      this.profileRenderFrame = window.requestAnimationFrame(() => {
+        this.profileRenderFrame = null;
+        this.renderVolumeProfile();
+      });
+    }
+
+    getVisibleRecords() {
+      if (!this.chart || !this.state.data.length) return [];
+      const logicalRange = this.chart.timeScale().getVisibleLogicalRange();
+      if (!logicalRange) return this.state.data;
+      const firstIndex = this.clamp(
+        Math.floor(logicalRange.from),
+        0,
+        this.state.data.length - 1
+      );
+      const lastIndex = this.clamp(
+        Math.ceil(logicalRange.to),
+        firstIndex,
+        this.state.data.length - 1
+      );
+      return this.state.data.slice(firstIndex, lastIndex + 1);
+    }
+
+    renderVolumeProfile() {
+      if (!this.state.volumeProfileVisible || !this.series.candles) return;
+      const records = this.getVisibleRecords();
+      const profile = window.MarketLensUtils.buildVolumeProfile(records, {
+        binCount: this.isMobile ? 20 : 30,
+      });
+      const plot = this.getPlotSize();
+      const fragment = document.createDocumentFragment();
+
+      profile.bins.forEach((bin) => {
+        if (!Number.isFinite(profile.maxVolume) || profile.maxVolume <= 0) return;
+        const topCoordinate = this.series.candles.priceToCoordinate(bin.high);
+        const bottomCoordinate = this.series.candles.priceToCoordinate(bin.low);
+        if (!Number.isFinite(topCoordinate) || !Number.isFinite(bottomCoordinate)) return;
+
+        const top = this.clamp(Math.min(topCoordinate, bottomCoordinate), 0, plot.height);
+        const bottom = this.clamp(Math.max(topCoordinate, bottomCoordinate), 0, plot.height);
+        if (bottom <= 0 || top >= plot.height) return;
+
+        const bar = document.createElement("div");
+        bar.className = "volume-profile-bar";
+        if (bin.isValueArea) bar.classList.add("is-value-area");
+        if (bin.isPoc) bar.classList.add("is-poc");
+        Object.assign(bar.style, {
+          top: `${top}px`,
+          height: `${Math.max(2, bottom - top)}px`,
+          width: `${Math.max(1.5, (bin.volume / profile.maxVolume) * 100)}%`,
+        });
+
+        const down = document.createElement("span");
+        const up = document.createElement("span");
+        down.className = "volume-profile-down";
+        up.className = "volume-profile-up";
+        const total = bin.volume || 1;
+        down.style.width = `${(bin.downVolume / total) * 100}%`;
+        up.style.width = `${(bin.upVolume / total) * 100}%`;
+        bar.append(down, up);
+        fragment.append(bar);
+      });
+
+      this.refs.volumeProfile.replaceChildren(fragment);
+      this.refs.volumeProfileSummary.textContent = profile.bins.length
+        ? `POC $${this.formatPrice(profile.poc)} · VAH $${this.formatPrice(profile.vah)} · VAL $${this.formatPrice(profile.val)} · ${INTEGER_FORMATTER.format(records.length)}봉 근사`
+        : "표시 구간의 매물대 데이터 없음";
+    }
+
+    populateComparisonSelector(summaries) {
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "종목을 선택하세요";
+      const options = summaries
+        .filter((summary) => summary.symbol !== COMPARISON_BASE_SYMBOL)
+        .map((summary) => {
+          const option = document.createElement("option");
+          option.value = summary.symbol;
+          option.textContent = `${summary.symbol} · ${summary.companyName || summary.symbol}`;
+          option.disabled = !summary.dataPath;
+          return option;
+        });
+      this.refs.compareSymbolSelect.replaceChildren(placeholder, ...options);
+      this.renderComparisonControls();
+    }
+
+    setCompareSettingsOpen(open) {
+      this.refs.compareSettings.hidden = !open;
+      this.refs.compareSettingsToggle.setAttribute("aria-expanded", String(open));
+      if (open) {
+        this.setIndicatorSettingsOpen(false);
+        this.renderComparisonControls();
+      }
+    }
+
+    async restoreComparisons() {
+      const symbols = this.initialComparisonSymbols.filter(
+        (symbol) => this.summaryBySymbol.has(symbol) && symbol !== COMPARISON_BASE_SYMBOL
+      );
+      this.initialComparisonSymbols = [];
+      for (const symbol of symbols) {
+        await this.addComparisonSymbol(symbol, { persist: false, announce: false });
+      }
+      this.persistComparisonPreferences();
+      this.renderComparisonControls();
+    }
+
+    async addComparisonSymbol(symbol, { persist = true, announce = true } = {}) {
+      const normalisedSymbol = String(symbol || "").trim().toUpperCase();
+      if (!normalisedSymbol || normalisedSymbol === COMPARISON_BASE_SYMBOL) return;
+      if (this.state.comparisonSymbols.includes(normalisedSymbol)) {
+        if (announce) this.refs.compareMessage.textContent = `${normalisedSymbol}은 이미 비교 중입니다.`;
+        return;
+      }
+      const summary = this.summaryBySymbol.get(normalisedSymbol);
+      if (!summary || !this.isSafeDataPath(summary.dataPath, normalisedSymbol)) {
+        if (announce) this.refs.compareMessage.textContent = `${normalisedSymbol} 데이터를 사용할 수 없습니다.`;
+        return;
+      }
+
+      this.refs.compareAddButton.disabled = true;
+      if (announce) this.refs.compareMessage.textContent = `${normalisedSymbol} 비교 데이터를 불러오는 중입니다.`;
+      try {
+        await Promise.all([
+          this.loadComparisonRecords(COMPARISON_BASE_SYMBOL),
+          this.loadComparisonRecords(normalisedSymbol),
+        ]);
+        this.state.comparisonSymbols.push(normalisedSymbol);
+        this.ensureComparisonSeries(COMPARISON_BASE_SYMBOL, { isBase: true });
+        this.ensureComparisonSeries(normalisedSymbol);
+        this.refreshComparisonSeries();
+        this.renderComparisonControls();
+        if (persist) this.persistComparisonPreferences();
+        if (announce) {
+          this.refs.compareMessage.textContent =
+            `${normalisedSymbol}을 PLTR 기준 비교에 추가했습니다.`;
+        }
+      } catch (error) {
+        this.refs.compareMessage.textContent =
+          `${normalisedSymbol} 비교 추가 실패: ${error instanceof Error ? error.message : error}`;
+      } finally {
+        this.refs.compareSymbolSelect.value = "";
+        this.refs.compareAddButton.disabled = true;
+      }
+    }
+
+    async loadComparisonRecords(symbol) {
+      if (this.rawDataBySymbol.has(symbol)) return this.rawDataBySymbol.get(symbol);
+      const summary = this.summaryBySymbol.get(symbol);
+      if (!summary || !this.isSafeDataPath(summary.dataPath, symbol)) {
+        throw new Error(`${symbol} 데이터 경로가 유효하지 않습니다.`);
+      }
+      const payload = await this.fetchJson(summary.dataPath);
+      const records = this.validateRecords(payload, symbol);
+      this.rawDataBySymbol.set(symbol, records);
+      return records;
+    }
+
+    ensureComparisonSeries(symbol, { isBase = false } = {}) {
+      if (this.comparisonSeries.has(symbol)) return this.comparisonSeries.get(symbol);
+      const library = window.LightweightCharts;
+      const colour = isBase ? COMPARISON_BASE_COLOUR : this.getComparisonColour(symbol);
+      const series = this.chart.addSeries(library.LineSeries, {
+        priceScaleId: "comparison",
+        color: colour,
+        lineWidth: isBase ? 2 : 3,
+        lineStyle: isBase ? library.LineStyle.Dashed : library.LineStyle.Solid,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: true,
+        priceFormat: { type: "percent", precision: 2, minMove: 0.01 },
+      });
+      this.chart.priceScale("comparison").applyOptions({
+        autoScale: true,
+        scaleMargins: { top: 0.08, bottom: 0.24 },
+      });
+      this.comparisonSeries.set(symbol, series);
+      return series;
+    }
+
+    refreshComparisonSeries() {
+      if (!this.chart) return;
+      if (!this.state.comparisonSymbols.length) {
+        this.clearComparisonSeries();
+        this.renderComparisonLegend([]);
+        return;
+      }
+
+      const baseDailyRecords = this.rawDataBySymbol.get(COMPARISON_BASE_SYMBOL);
+      if (!baseDailyRecords?.length) return;
+      const baseRecords = window.MarketLensUtils.aggregateRecords(
+        baseDailyRecords,
+        this.state.selectedInterval
+      );
+      const startTime = this.getPeriodStartTime(baseRecords);
+      const legendEntries = [];
+
+      [COMPARISON_BASE_SYMBOL, ...this.state.comparisonSymbols].forEach((symbol) => {
+        const dailyRecords = this.rawDataBySymbol.get(symbol);
+        if (!dailyRecords?.length) return;
+        const records = window.MarketLensUtils.aggregateRecords(
+          dailyRecords,
+          this.state.selectedInterval
+        );
+        const data = window.MarketLensUtils.normaliseRecords(records, startTime);
+        const series = this.ensureComparisonSeries(symbol, {
+          isBase: symbol === COMPARISON_BASE_SYMBOL,
+        });
+        series.setData(data);
+        if (data.length) {
+          legendEntries.push({
+            symbol,
+            colour: symbol === COMPARISON_BASE_SYMBOL
+              ? COMPARISON_BASE_COLOUR
+              : this.getComparisonColour(symbol),
+            value: data[data.length - 1].value,
+          });
+        }
+      });
+      this.chart.priceScale("comparison").applyOptions({ autoScale: true });
+      this.renderComparisonLegend(legendEntries);
+    }
+
+    getPeriodStartTime(records) {
+      if (!records.length) return "";
+      if (this.state.selectedPeriod === "ALL") return records[0].time;
+      const latestTime = records[records.length - 1].time;
+      const target = new Date(`${latestTime}T00:00:00Z`);
+      const offset = PERIOD_OFFSETS[this.state.selectedPeriod];
+      if (offset?.months) target.setUTCMonth(target.getUTCMonth() - offset.months);
+      if (offset?.years) target.setUTCFullYear(target.getUTCFullYear() - offset.years);
+      const targetText = target.toISOString().slice(0, 10);
+      return records.find((record) => record.time >= targetText)?.time || records[0].time;
+    }
+
+    removeComparisonSymbol(symbol) {
+      const index = this.state.comparisonSymbols.indexOf(symbol);
+      if (index < 0) return;
+      this.state.comparisonSymbols.splice(index, 1);
+      const series = this.comparisonSeries.get(symbol);
+      if (series) {
+        this.chart.removeSeries(series);
+        this.comparisonSeries.delete(symbol);
+      }
+      this.refreshComparisonSeries();
+      this.renderComparisonControls();
+      this.persistComparisonPreferences();
+      this.refs.compareMessage.textContent = `${symbol} 비교를 삭제했습니다.`;
+    }
+
+    clearComparisonSeries() {
+      this.comparisonSeries.forEach((series) => {
+        try {
+          this.chart.removeSeries(series);
+        } catch (error) {
+          console.warn("비교 선 제거 중 오류", error);
+        }
+      });
+      this.comparisonSeries.clear();
+    }
+
+    renderComparisonControls() {
+      const fragment = document.createDocumentFragment();
+      if (!this.state.comparisonSymbols.length) {
+        const empty = document.createElement("p");
+        empty.className = "compare-empty";
+        empty.textContent = "추가한 비교 종목이 없습니다.";
+        fragment.append(empty);
+      } else {
+        this.state.comparisonSymbols.forEach((symbol) => {
+          const chip = document.createElement("span");
+          chip.className = "compare-symbol-chip";
+          chip.style.setProperty("--compare-colour", this.getComparisonColour(symbol));
+          chip.append(document.createTextNode(symbol));
+          const removeButton = document.createElement("button");
+          removeButton.type = "button";
+          removeButton.textContent = "×";
+          removeButton.setAttribute("aria-label", `${symbol} 비교 삭제`);
+          removeButton.addEventListener("click", () => this.removeComparisonSymbol(symbol));
+          chip.append(removeButton);
+          fragment.append(chip);
+        });
+      }
+      this.refs.compareSymbolList.replaceChildren(fragment);
+      this.refs.compareCount.textContent = String(this.state.comparisonSymbols.length);
+      Array.from(this.refs.compareSymbolSelect.options).forEach((option) => {
+        if (!option.value) return;
+        const summary = this.summaryBySymbol.get(option.value);
+        option.disabled = !summary?.dataPath || this.state.comparisonSymbols.includes(option.value);
+      });
+      this.refs.compareSymbolSelect.value = "";
+      this.refs.compareAddButton.disabled = true;
+    }
+
+    renderComparisonLegend(entries) {
+      if (!entries.length) {
+        this.refs.comparisonLegend.hidden = true;
+        this.refs.comparisonLegend.replaceChildren();
+        return;
+      }
+      const items = entries.map((entry) => {
+        const item = document.createElement("span");
+        item.style.setProperty("--compare-colour", entry.colour);
+        const sign = entry.value > 0 ? "+" : entry.value < 0 ? "−" : "";
+        item.textContent = `${entry.symbol} ${sign}${this.formatPrice(Math.abs(entry.value))}%`;
+        return item;
+      });
+      this.refs.comparisonLegend.replaceChildren(...items);
+      this.refs.comparisonLegend.hidden = false;
+    }
+
+    getComparisonColour(symbol) {
+      if (this.comparisonColours.has(symbol)) return this.comparisonColours.get(symbol);
+      const symbols = Array.from(this.summaryBySymbol.keys()).filter(
+        (candidate) => candidate !== COMPARISON_BASE_SYMBOL
+      );
+      const index = Math.max(0, symbols.indexOf(symbol));
+      const colour = COMPARISON_COLOURS[index % COMPARISON_COLOURS.length];
+      this.comparisonColours.set(symbol, colour);
+      return colour;
+    }
+
+    readComparisonPreferences() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(COMPARISON_STORAGE_KEY) || "[]");
+        if (!Array.isArray(saved)) return [];
+        return [...new Set(saved)]
+          .filter((symbol) => typeof symbol === "string")
+          .map((symbol) => symbol.trim().toUpperCase())
+          .filter((symbol) => symbol && symbol !== COMPARISON_BASE_SYMBOL)
+          .slice(0, COMPARISON_COLOURS.length);
+      } catch (error) {
+        return [];
+      }
+    }
+
+    persistComparisonPreferences() {
+      try {
+        localStorage.setItem(
+          COMPARISON_STORAGE_KEY,
+          JSON.stringify(this.state.comparisonSymbols)
+        );
+      } catch (error) {
+        console.warn("종목 비교 설정을 저장하지 못했습니다.", error);
+      }
+    }
+
     selectPeriod(period, { updateButtons = true } = {}) {
       if (!this.chart || !this.state.data.length) return;
       if (period !== "ALL" && !(period in PERIOD_OFFSETS)) return;
@@ -1156,9 +1678,12 @@
         });
       }
 
+      this.refreshComparisonSeries();
+
       window.requestAnimationFrame(() => {
         if (period === "ALL") {
           this.chart.timeScale().fitContent();
+          this.scheduleVolumeProfileRender();
           return;
         }
 
@@ -1172,6 +1697,7 @@
           this.state.data.find((record) => record.time >= targetText) || this.state.data[0];
 
         this.chart.timeScale().setVisibleRange({ from: firstVisible.time, to: latestTime });
+        this.scheduleVolumeProfileRender();
       });
     }
 
@@ -1246,7 +1772,7 @@
 
       field.textContent = `${sign}${this.formatPrice(Math.abs(changeRate))}%`;
       field.classList.add(directionClass);
-      field.title = `전일 종가 $${this.formatPrice(previousClose)} 대비`;
+      field.title = `이전 ${INTERVAL_LABELS[this.state.selectedInterval]} 종가 $${this.formatPrice(previousClose)} 대비`;
     }
 
     renderLatestLegend(record) {
@@ -1260,12 +1786,14 @@
 
     renderDataRange(records) {
       if (!records.length) {
-        this.refs.dataRange.textContent = "1D 일봉 데이터 없음";
+        this.refs.dataRange.textContent =
+          `${this.state.selectedInterval} ${INTERVAL_LABELS[this.state.selectedInterval]} 데이터 없음`;
         return;
       }
       const first = records[0].time;
       const latest = records[records.length - 1].time;
-      this.refs.dataRange.textContent = `1D 일봉 ${INTEGER_FORMATTER.format(records.length)}개 · ${first} ~ ${latest}`;
+      this.refs.dataRange.textContent =
+        `${this.state.selectedInterval} ${INTERVAL_LABELS[this.state.selectedInterval]} ${INTEGER_FORMATTER.format(records.length)}개 · ${first} ~ ${latest}`;
     }
 
     renderQuote(summary, latest) {
@@ -1321,6 +1849,7 @@
       }
       this.applyDocumentTheme();
       this.applyChartTheme();
+      this.scheduleVolumeProfileRender();
     }
 
     applyDocumentTheme() {
