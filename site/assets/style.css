@@ -13,6 +13,9 @@
   --focus: #83a8ff;
   --positive: #2dd4bf;
   --negative: #ff5b69;
+  --cursor-open: #7dd3fc;
+  --cursor-close: #fbbf24;
+  --cursor-volume: #c4b5fd;
   --sma120: #f04438;
   --sma200: #3f6df6;
   --vwma100: #f47a2a;
@@ -39,6 +42,9 @@
   --focus: #285fd7;
   --positive: #008f7a;
   --negative: #d83245;
+  --cursor-open: #0369a1;
+  --cursor-close: #a16207;
+  --cursor-volume: #6d28d9;
   --shadow: 0 16px 36px rgba(34, 47, 72, 0.12);
 }
 
@@ -493,6 +499,16 @@ footer div {
   background: var(--surface-raised);
 }
 
+.indicator-setting-row.is-selected {
+  border-color: color-mix(in srgb, var(--indicator-accent, var(--focus)), transparent 28%);
+  background: color-mix(in srgb, var(--indicator-accent, var(--focus)), transparent 91%);
+  box-shadow: inset 3px 0 0 var(--indicator-accent, var(--focus));
+}
+
+.indicator-setting-row.is-selected .indicator-visibility span {
+  color: var(--text);
+}
+
 .indicator-setting-row.is-disabled .colour-control,
 .indicator-setting-row.is-disabled .width-control {
   opacity: 0.44;
@@ -738,6 +754,26 @@ footer div {
   backdrop-filter: blur(8px);
 }
 
+.latest-legend button::after {
+  content: "✎";
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1;
+  opacity: 0.62;
+}
+
+.latest-legend button:hover::after,
+.latest-legend button[aria-expanded="true"]::after {
+  color: var(--focus);
+  opacity: 1;
+}
+
+.latest-legend button[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--focus), transparent 35%);
+  background: color-mix(in srgb, var(--focus), transparent 86%);
+  color: var(--text);
+}
+
 .latest-legend button.is-hidden {
   text-decoration: line-through;
   opacity: 0.45;
@@ -749,44 +785,73 @@ footer div {
 
 .crosshair-panel {
   max-width: 100%;
-  padding: 7px 9px;
-  border: 1px solid var(--border-soft);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--chart-bg), transparent 14%);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
-  backdrop-filter: blur(9px);
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--text-secondary), transparent 68%);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--chart-bg), transparent 4%);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(12px);
 }
 
 .crosshair-panel strong {
   display: block;
-  margin-bottom: 5px;
-  color: var(--text-secondary);
-  font-size: 10px;
+  width: fit-content;
+  margin-bottom: 6px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--focus), transparent 86%);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .crosshair-panel dl {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 10px;
+  gap: 5px 7px;
   margin: 0;
 }
 
 .crosshair-panel dl div {
   display: flex;
+  align-items: center;
   gap: 4px;
-  font-size: 9px;
+  padding: 2px 5px;
+  border: 1px solid color-mix(in srgb, currentColor, transparent 84%);
+  border-radius: 5px;
+  background: color-mix(in srgb, currentColor, transparent 93%);
+  color: var(--text-secondary);
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
 
 .crosshair-panel dt {
-  color: var(--text-muted);
+  color: inherit;
+  font-weight: 750;
+  opacity: 0.76;
 }
 
 .crosshair-panel dd {
   margin: 0;
-  color: var(--text-secondary);
-  font-weight: 650;
+  color: inherit;
+  font-weight: 800;
 }
+
+.cursor-open { color: var(--cursor-open) !important; }
+.cursor-high { color: var(--positive) !important; }
+.cursor-low { color: var(--negative) !important; }
+.cursor-close { color: var(--cursor-close) !important; }
+.cursor-volume { color: var(--cursor-volume) !important; }
+.cursor-sma120 { color: var(--sma120) !important; }
+.cursor-sma200 { color: var(--sma200) !important; }
+.cursor-vwma100 { color: var(--vwma100) !important; }
+.cursor-bb-upper { color: var(--bb-upper) !important; }
+.cursor-bb-basis { color: var(--bb-basis) !important; }
+.cursor-bb-lower { color: var(--bb-lower) !important; }
+
+.cursor-change dd.is-positive { color: var(--positive); }
+.cursor-change dd.is-negative { color: var(--negative); }
+.cursor-change dd.is-flat { color: var(--cursor-close); }
 
 .chart-status {
   position: absolute;
@@ -1050,7 +1115,7 @@ footer a {
 
   .crosshair-panel strong {
     margin-bottom: 3px;
-    font-size: 8px;
+    font-size: 9px;
   }
 
   .crosshair-panel dl {
@@ -1058,7 +1123,8 @@ footer a {
   }
 
   .crosshair-panel dl div {
-    font-size: 7px;
+    padding: 2px 4px;
+    font-size: 8px;
   }
 
   .interaction-guide {

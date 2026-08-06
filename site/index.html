@@ -9,9 +9,9 @@
     />
     <meta name="color-scheme" content="dark light" />
     <title>Market Lens · 미국 주식 일봉 차트</title>
-    <link rel="stylesheet" href="./assets/style.css?v=4" />
+    <link rel="stylesheet" href="./assets/style.css?v=5" />
     <script defer src="./assets/vendor/lightweight-charts.standalone.production.js"></script>
-    <script defer src="./assets/app.js?v=4"></script>
+    <script defer src="./assets/app.js?v=5"></script>
   </head>
   <body>
     <a class="skip-link" href="#stock-chart">차트로 바로가기</a>
@@ -88,7 +88,7 @@
               aria-expanded="false"
               aria-controls="indicator-settings"
             >
-              <span aria-hidden="true">⚙</span> 지표 설정
+              <span aria-hidden="true">⚙</span> 지표 스타일
             </button>
           </div>
 
@@ -103,8 +103,8 @@
         >
           <header>
             <div>
-              <strong>지표 설정</strong>
-              <span>선마다 표시·색상·굵기를 따로 조절합니다.</span>
+              <strong>지표 스타일</strong>
+              <span id="indicator-settings-help">선마다 표시·색상·굵기를 따로 조절합니다.</span>
             </div>
             <button id="indicator-settings-close" type="button" aria-label="지표 설정 닫기">×</button>
           </header>
@@ -206,28 +206,74 @@
 
       <section class="chart-shell" aria-label="주가 차트 영역">
         <div class="chart-hud">
-          <div id="latest-legend" class="latest-legend" aria-label="최신 지표값">
-            <button type="button" data-legend-toggle="sma120">
+          <div
+            id="latest-legend"
+            class="latest-legend"
+            aria-label="최신 지표값. 지표를 선택하면 스타일 설정이 열립니다."
+          >
+            <button
+              type="button"
+              data-legend-toggle="sma120"
+              aria-controls="indicator-settings"
+              aria-expanded="false"
+              aria-label="SMA120 색상과 굵기 설정 열기"
+              title="SMA120 색상·굵기 설정"
+            >
               <span class="legend-name sma120">SMA120</span>
               <span id="legend-sma120">—</span>
             </button>
-            <button type="button" data-legend-toggle="sma200">
+            <button
+              type="button"
+              data-legend-toggle="sma200"
+              aria-controls="indicator-settings"
+              aria-expanded="false"
+              aria-label="SMA200 색상과 굵기 설정 열기"
+              title="SMA200 색상·굵기 설정"
+            >
               <span class="legend-name sma200">SMA200</span>
               <span id="legend-sma200">—</span>
             </button>
-            <button type="button" data-legend-toggle="vwma100">
+            <button
+              type="button"
+              data-legend-toggle="vwma100"
+              aria-controls="indicator-settings"
+              aria-expanded="false"
+              aria-label="VWMA100 색상과 굵기 설정 열기"
+              title="VWMA100 색상·굵기 설정"
+            >
               <span class="legend-name vwma100">VWMA100</span>
               <span id="legend-vwma100">—</span>
             </button>
-            <button type="button" data-legend-toggle="bbUpper">
+            <button
+              type="button"
+              data-legend-toggle="bbUpper"
+              aria-controls="indicator-settings"
+              aria-expanded="false"
+              aria-label="볼린저 밴드 상단선 색상과 굵기 설정 열기"
+              title="BB Upper 색상·굵기 설정"
+            >
               <span class="legend-name bb-upper">BB U</span>
               <span id="legend-bb-upper">—</span>
             </button>
-            <button type="button" data-legend-toggle="bbBasis">
+            <button
+              type="button"
+              data-legend-toggle="bbBasis"
+              aria-controls="indicator-settings"
+              aria-expanded="false"
+              aria-label="볼린저 밴드 중심선 색상과 굵기 설정 열기"
+              title="BB Basis 색상·굵기 설정"
+            >
               <span class="legend-name bb-basis">BB M</span>
               <span id="legend-bb-basis">—</span>
             </button>
-            <button type="button" data-legend-toggle="bbLower">
+            <button
+              type="button"
+              data-legend-toggle="bbLower"
+              aria-controls="indicator-settings"
+              aria-expanded="false"
+              aria-label="볼린저 밴드 하단선 색상과 굵기 설정 열기"
+              title="BB Lower 색상·굵기 설정"
+            >
               <span class="legend-name bb-lower">BB L</span>
               <span id="legend-bb-lower">—</span>
             </button>
@@ -236,17 +282,18 @@
           <div class="crosshair-panel" aria-live="polite">
             <strong id="cursor-date">최근 거래일</strong>
             <dl>
-              <div><dt>시</dt><dd id="cursor-open">—</dd></div>
-              <div><dt>고</dt><dd id="cursor-high">—</dd></div>
-              <div><dt>저</dt><dd id="cursor-low">—</dd></div>
-              <div><dt>종</dt><dd id="cursor-close">—</dd></div>
-              <div><dt>거래량</dt><dd id="cursor-volume">—</dd></div>
-              <div><dt>SMA120</dt><dd id="cursor-sma120">—</dd></div>
-              <div><dt>SMA200</dt><dd id="cursor-sma200">—</dd></div>
-              <div><dt>VWMA</dt><dd id="cursor-vwma100">—</dd></div>
-              <div><dt>BB U</dt><dd id="cursor-bb-upper">—</dd></div>
-              <div><dt>BB M</dt><dd id="cursor-bb-basis">—</dd></div>
-              <div><dt>BB L</dt><dd id="cursor-bb-lower">—</dd></div>
+              <div class="cursor-field cursor-open"><dt>시</dt><dd id="cursor-open">—</dd></div>
+              <div class="cursor-field cursor-high"><dt>고</dt><dd id="cursor-high">—</dd></div>
+              <div class="cursor-field cursor-low"><dt>저</dt><dd id="cursor-low">—</dd></div>
+              <div class="cursor-field cursor-close"><dt>종</dt><dd id="cursor-close">—</dd></div>
+              <div class="cursor-field cursor-change"><dt>등락률</dt><dd id="cursor-change-rate">—</dd></div>
+              <div class="cursor-field cursor-volume"><dt>거래량</dt><dd id="cursor-volume">—</dd></div>
+              <div class="cursor-field cursor-sma120"><dt>SMA120</dt><dd id="cursor-sma120">—</dd></div>
+              <div class="cursor-field cursor-sma200"><dt>SMA200</dt><dd id="cursor-sma200">—</dd></div>
+              <div class="cursor-field cursor-vwma100"><dt>VWMA</dt><dd id="cursor-vwma100">—</dd></div>
+              <div class="cursor-field cursor-bb-upper"><dt>BB U</dt><dd id="cursor-bb-upper">—</dd></div>
+              <div class="cursor-field cursor-bb-basis"><dt>BB M</dt><dd id="cursor-bb-basis">—</dd></div>
+              <div class="cursor-field cursor-bb-lower"><dt>BB L</dt><dd id="cursor-bb-lower">—</dd></div>
             </dl>
           </div>
         </div>

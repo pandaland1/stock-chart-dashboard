@@ -122,6 +122,7 @@
       this.resizeObserver = null;
       this.summaryBySymbol = new Map();
       this.recordByDate = new Map();
+      this.recordIndexByDate = new Map();
       this.loadSequence = 0;
       this.isMobile = window.innerWidth <= 760;
       this.pointerInteraction = null;
@@ -129,6 +130,7 @@
       this.lastChartPoint = null;
       this.measurement = null;
       this.shiftKeyDown = false;
+      this.selectedIndicatorKey = null;
       const indicatorPreferences = this.readIndicatorPreferences();
       this.state = {
         symbol: null,
@@ -174,6 +176,7 @@
         indicatorSettings: byId("indicator-settings"),
         indicatorSettingsClose: byId("indicator-settings-close"),
         indicatorSettingsReset: byId("indicator-settings-reset"),
+        indicatorSettingsHelp: byId("indicator-settings-help"),
         interactionHint: byId("interaction-hint"),
         measurementLayer: byId("measurement-layer"),
         measurementBox: byId("measurement-box"),
@@ -188,6 +191,7 @@
           high: byId("cursor-high"),
           low: byId("cursor-low"),
           close: byId("cursor-close"),
+          changeRate: byId("cursor-change-rate"),
           volume: byId("cursor-volume"),
           sma120: byId("cursor-sma120"),
           sma200: byId("cursor-sma200"),
@@ -768,7 +772,7 @@
       });
 
       document.querySelectorAll("[data-legend-toggle]").forEach((button) => {
-        button.addEventListener("click", () => this.toggleIndicator(button.dataset.legendToggle));
+        button.addEventListener("click", () => this.openIndicatorEditor(button.dataset.legendToggle));
       });
 
       this.refs.verticalPanButton.addEventListener("click", () => this.toggleTool("pan-y"));
@@ -788,7 +792,8 @@
         if (this.refs.indicatorSettings.hidden) return;
         if (
           this.refs.indicatorSettings.contains(event.target) ||
-          this.refs.indicatorSettingsToggle.contains(event.target)
+          this.refs.indicatorSettingsToggle.contains(event.target) ||
+          event.target.closest?.("[data-legend-toggle]")
         ) {
           return;
         }
@@ -828,6 +833,9 @@
         const records = this.validateRecords(payload, symbol);
         this.state.data = records;
         this.recordByDate = new Map(records.map((record) => [record.time, record]));
+        this.recordIndexByDate = new Map(
+          records.map((record, index) => [record.time, index])
+        );
         this.clearMeasurement({ announce: false });
         this.setSeriesData(records);
         this.renderQuote(summary, records[records.length - 1]);
@@ -923,11 +931,17 @@
       this.priceLines = [];
     }
 
-    toggleIndicator(key) {
-      if (!(key in this.state.indicators)) return;
-      this.updateIndicatorStyle(key, {
-        visible: !this.state.indicators[key].visible,
+    openIndicatorEditor(key) {
+      const config = CHART_PALETTE.indicators[key];
+      if (!config || !(key in this.state.indicators)) return;
+
+      this.selectedIndicatorKey = key;
+      document.querySelectorAll("[data-indicator-row]").forEach((row) => {
+        row.classList.toggle("is-selected", row.dataset.indicatorRow === key);
       });
+      this.refs.indicatorSettingsHelp.textContent =
+        `${config.title} 선택됨 · 표시·색상·굵기를 조절합니다.`;
+      this.setIndicatorSettingsOpen(true);
     }
 
     updateIndicatorStyle(key, patch) {
@@ -978,10 +992,15 @@
         if (colourInput) colourInput.value = style.color;
         if (widthSelect) widthSelect.value = String(style.lineWidth);
         settingsRow?.classList.toggle("is-disabled", !style.visible);
+        settingsRow?.style.setProperty("--indicator-accent", style.color);
 
         document.querySelectorAll(`[data-legend-toggle="${key}"]`).forEach((button) => {
           button.classList.toggle("is-hidden", !style.visible);
-          button.setAttribute("aria-pressed", String(style.visible));
+          button.dataset.visible = String(style.visible);
+          button.setAttribute(
+            "aria-expanded",
+            String(!this.refs.indicatorSettings.hidden && this.selectedIndicatorKey === key)
+          );
         });
       });
     }
@@ -989,6 +1008,12 @@
     setIndicatorSettingsOpen(open) {
       this.refs.indicatorSettings.hidden = !open;
       this.refs.indicatorSettingsToggle.setAttribute("aria-expanded", String(open));
+      document.querySelectorAll("[data-legend-toggle]").forEach((button) => {
+        button.setAttribute(
+          "aria-expanded",
+          String(open && button.dataset.legendToggle === this.selectedIndicatorKey)
+        );
+      });
       if (open) this.syncIndicatorControls();
     }
 
@@ -1126,6 +1151,7 @@
       fields.high.textContent = this.formatPrice(record.high);
       fields.low.textContent = this.formatPrice(record.low);
       fields.close.textContent = this.formatPrice(record.close);
+      this.renderCursorChangeRate(record);
       fields.volume.textContent = this.formatVolume(record.volume);
       fields.sma120.textContent = this.formatPrice(record.sma120);
       fields.sma200.textContent = this.formatPrice(record.sma200);
@@ -1133,6 +1159,31 @@
       fields.bbUpper.textContent = this.formatPrice(record.bbUpper);
       fields.bbBasis.textContent = this.formatPrice(record.bbBasis);
       fields.bbLower.textContent = this.formatPrice(record.bbLower);
+    }
+
+    renderCursorChangeRate(record) {
+      const field = this.refs.cursorFields.changeRate;
+      const index = this.recordIndexByDate.get(record.time);
+      const previousRecord = Number.isInteger(index) && index > 0 ? this.state.data[index - 1] : null;
+      const previousClose = Number(previousRecord?.close);
+      const currentClose = Number(record.close);
+
+      field.classList.remove("is-positive", "is-negative", "is-flat");
+      field.removeAttribute("title");
+
+      if (!Number.isFinite(previousClose) || previousClose === 0 || !Number.isFinite(currentClose)) {
+        field.textContent = "—";
+        return;
+      }
+
+      const changeRate = ((currentClose - previousClose) / previousClose) * 100;
+      const sign = changeRate > 0 ? "+" : changeRate < 0 ? "−" : "";
+      const directionClass =
+        changeRate > 0 ? "is-positive" : changeRate < 0 ? "is-negative" : "is-flat";
+
+      field.textContent = `${sign}${this.formatPrice(Math.abs(changeRate))}%`;
+      field.classList.add(directionClass);
+      field.title = `전일 종가 $${this.formatPrice(previousClose)} 대비`;
     }
 
     renderLatestLegend(record) {
