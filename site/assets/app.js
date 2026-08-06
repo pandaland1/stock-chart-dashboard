@@ -399,6 +399,11 @@
     installChartInteractions() {
       const capture = { capture: true };
       this.refs.chart.addEventListener(
+        "wheel",
+        (event) => this.handlePriceScaleWheel(event),
+        { capture: true, passive: false }
+      );
+      this.refs.chart.addEventListener(
         "pointerdown",
         (event) => this.handleChartPointerDown(event),
         capture
@@ -424,6 +429,60 @@
           this.finishShiftMeasurement();
         }
       });
+    }
+
+    handlePriceScaleWheel(event) {
+      if (!this.state.data.length || event.deltaY === 0) return;
+
+      const rect = this.refs.chart.getBoundingClientRect();
+      const plot = this.getPlotSize();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const isPriceScale = x > plot.width && x <= rect.width && y >= 0 && y <= plot.height;
+      if (!isPriceScale) return;
+
+      this.blockNativeChartGesture(event);
+
+      const scale = this.series.candles.priceScale();
+      let range = scale.getVisibleRange();
+      if (!range) {
+        const bottom = this.series.candles.coordinateToPrice(plot.height);
+        const top = this.series.candles.coordinateToPrice(0);
+        if (!Number.isFinite(bottom) || !Number.isFinite(top)) return;
+        range = { from: Math.min(bottom, top), to: Math.max(bottom, top) };
+      }
+
+      const from = Math.min(range.from, range.to);
+      const to = Math.max(range.from, range.to);
+      const span = to - from;
+      const anchorPrice = this.series.candles.coordinateToPrice(
+        this.clamp(y, 0, plot.height)
+      );
+      if (
+        !Number.isFinite(from) ||
+        !Number.isFinite(to) ||
+        !Number.isFinite(span) ||
+        span <= 0 ||
+        !Number.isFinite(anchorPrice)
+      ) {
+        return;
+      }
+
+      const deltaModeMultiplier = event.deltaMode === 1
+        ? 16
+        : event.deltaMode === 2
+          ? plot.height
+          : 1;
+      const wheelDelta = this.clamp(event.deltaY * deltaModeMultiplier, -120, 120);
+      const zoomFactor = Math.exp(wheelDelta * 0.0018);
+      const minimumSpan = Math.max(Math.abs(anchorPrice) * 0.0001, 0.01);
+      const maximumSpan = 1_000_000_000;
+      const nextSpan = this.clamp(span * zoomFactor, minimumSpan, maximumSpan);
+      const anchorRatio = this.clamp((anchorPrice - from) / span, 0, 1);
+      const nextFrom = anchorPrice - nextSpan * anchorRatio;
+
+      scale.setAutoScale(false);
+      scale.setVisibleRange({ from: nextFrom, to: nextFrom + nextSpan });
     }
 
     handleChartPointerDown(event) {
