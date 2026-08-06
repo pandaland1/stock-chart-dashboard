@@ -419,6 +419,9 @@
       );
       this.refs.chart.addEventListener("pointerleave", () => {
         this.lastChartPoint = null;
+        if (this.shiftMeasurement && !this.shiftKeyDown) {
+          this.finishShiftMeasurement();
+        }
       });
     }
 
@@ -447,7 +450,7 @@
       const rawPoint = this.getChartPoint(event);
       this.lastChartPoint = rawPoint.insidePlot ? rawPoint : null;
 
-      if (this.shiftKeyDown) {
+      if (this.shiftKeyDown || event.shiftKey) {
         if (event.buttons & 1) this.blockNativeChartGesture(event);
         if (!rawPoint.insidePlot) return;
         const point = this.getChartPoint(event, { clampToPlot: true });
@@ -456,15 +459,22 @@
         return;
       }
 
+      if (this.shiftMeasurement) {
+        this.finishShiftMeasurement();
+      }
+
       if (!this.pointerInteraction || event.pointerId !== this.pointerInteraction.pointerId) return;
       this.blockNativeChartGesture(event);
       this.updateVerticalPan(this.getChartPoint(event, { clampToPlot: true }));
     }
 
     handleChartPointerUp(event) {
-      if (this.shiftKeyDown) {
+      if (this.shiftKeyDown || event.shiftKey) {
         this.blockNativeChartGesture(event);
         return;
+      }
+      if (this.shiftMeasurement) {
+        this.finishShiftMeasurement();
       }
       if (!this.pointerInteraction || event.pointerId !== this.pointerInteraction.pointerId) return;
       this.blockNativeChartGesture(event);
