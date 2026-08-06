@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ko" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="미국 주식 일봉과 SMA120, SMA200, VWMA100, 볼린저 밴드를 확인하는 개인용 차트"
+    />
+    <meta name="color-scheme" content="dark light" />
+    <title>Market Lens · 미국 주식 일봉 차트</title>
+    <link rel="stylesheet" href="./assets/style.css" />
+    <script defer src="./assets/vendor/lightweight-charts.standalone.production.js"></script>
+    <script defer src="./assets/app.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#stock-chart">차트로 바로가기</a>
+
+    <header class="topbar">
+      <div class="brand" aria-label="Market Lens">
+        <span class="brand-mark" aria-hidden="true">
+          <i></i><i></i><i></i><i></i>
+        </span>
+        <div>
+          <h1>Market Lens</h1>
+          <p>미국 주식 일봉 차트</p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <p class="update-chip">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="generated-at">데이터 확인 중</span>
+        </p>
+        <button id="theme-toggle" class="icon-button" type="button" aria-label="밝은 테마로 전환">
+          <span class="theme-icon" aria-hidden="true">☼</span>
+          <span class="theme-text">라이트</span>
+        </button>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="control-deck" aria-label="종목 및 차트 설정">
+        <div class="stock-picker">
+          <label for="stock-select">종목</label>
+          <div class="select-wrap">
+            <select id="stock-select" aria-describedby="stock-company" disabled>
+              <option>불러오는 중…</option>
+            </select>
+          </div>
+          <p id="stock-company" class="company-name">관심 종목을 불러오고 있습니다.</p>
+        </div>
+
+        <div class="quote-summary" aria-live="polite">
+          <strong id="current-price">—</strong>
+          <span id="price-change" class="price-change">—</span>
+          <span id="trade-date" class="trade-date">최근 거래일 —</span>
+        </div>
+
+        <div class="tool-groups">
+          <div class="segmented-control" role="group" aria-label="차트 기간">
+            <button type="button" data-period="3M">3M</button>
+            <button type="button" data-period="6M">6M</button>
+            <button type="button" data-period="1Y" class="is-active" aria-pressed="true">1Y</button>
+            <button type="button" data-period="2Y">2Y</button>
+            <button type="button" data-period="ALL">ALL</button>
+          </div>
+
+          <div class="indicator-toggles" role="group" aria-label="지표 표시 설정">
+            <button type="button" data-series-toggle="volume" aria-pressed="true">
+              <span class="toggle-check" aria-hidden="true">✓</span>거래량
+            </button>
+            <button type="button" data-series-toggle="sma120" aria-pressed="true">
+              <span class="line-swatch sma120" aria-hidden="true"></span>SMA120
+            </button>
+            <button type="button" data-series-toggle="sma200" aria-pressed="true">
+              <span class="line-swatch sma200" aria-hidden="true"></span>SMA200
+            </button>
+            <button type="button" data-series-toggle="vwma100" aria-pressed="true">
+              <span class="line-swatch vwma100" aria-hidden="true"></span>VWMA
+            </button>
+            <button type="button" data-series-toggle="bands" aria-pressed="true">
+              <span class="line-swatch bands" aria-hidden="true"></span>BB
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section class="chart-shell" aria-label="주가 차트 영역">
+        <div class="chart-hud">
+          <div id="latest-legend" class="latest-legend" aria-label="최신 지표값">
+            <button type="button" data-legend-toggle="sma120">
+              <span class="legend-name sma120">SMA120</span>
+              <span id="legend-sma120">—</span>
+            </button>
+            <button type="button" data-legend-toggle="sma200">
+              <span class="legend-name sma200">SMA200</span>
+              <span id="legend-sma200">—</span>
+            </button>
+            <button type="button" data-legend-toggle="vwma100">
+              <span class="legend-name vwma100">VWMA100</span>
+              <span id="legend-vwma100">—</span>
+            </button>
+            <button type="button" data-legend-toggle="bands">
+              <span class="legend-name bands">BB U / M / L</span>
+              <span id="legend-bands">— / — / —</span>
+            </button>
+          </div>
+
+          <div class="crosshair-panel" aria-live="polite">
+            <strong id="cursor-date">최근 거래일</strong>
+            <dl>
+              <div><dt>시</dt><dd id="cursor-open">—</dd></div>
+              <div><dt>고</dt><dd id="cursor-high">—</dd></div>
+              <div><dt>저</dt><dd id="cursor-low">—</dd></div>
+              <div><dt>종</dt><dd id="cursor-close">—</dd></div>
+              <div><dt>거래량</dt><dd id="cursor-volume">—</dd></div>
+              <div><dt>SMA120</dt><dd id="cursor-sma120">—</dd></div>
+              <div><dt>SMA200</dt><dd id="cursor-sma200">—</dd></div>
+              <div><dt>VWMA</dt><dd id="cursor-vwma100">—</dd></div>
+              <div><dt>BB U</dt><dd id="cursor-bb-upper">—</dd></div>
+              <div><dt>BB M</dt><dd id="cursor-bb-basis">—</dd></div>
+              <div><dt>BB L</dt><dd id="cursor-bb-lower">—</dd></div>
+            </dl>
+          </div>
+        </div>
+
+        <div
+          id="stock-chart"
+          class="stock-chart"
+          role="application"
+          tabindex="0"
+          aria-label="일봉 캔들 차트. 마우스 휠로 확대 및 축소하고 드래그해 이동할 수 있습니다."
+        ></div>
+
+        <div id="chart-status" class="chart-status" role="status" aria-live="polite">
+          <span class="spinner" aria-hidden="true"></span>
+          <strong id="status-title">차트를 준비하고 있습니다</strong>
+          <span id="status-message">잠시만 기다려 주세요.</span>
+          <button id="retry-button" type="button" hidden>다시 시도</button>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div>
+        <strong>데이터 기준</strong>
+        <span>Yahoo Finance · 수정주가(auto_adjust=True) · 일봉</span>
+      </div>
+      <div>
+        <strong>마지막 거래일</strong>
+        <span id="footer-trade-date">—</span>
+      </div>
+      <div>
+        <strong>사이트 생성</strong>
+        <span id="footer-generated-at">—</span>
+      </div>
+      <p>
+        개인 학습 및 참고용이며 투자 판단을 위한 공식 금융 정보가 아닙니다.
+        차트는 TradingView가 개발한 오픈소스
+        <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener noreferrer">
+          Lightweight Charts™
+        </a>를 사용합니다.
+      </p>
+    </footer>
+  </body>
+</html>
