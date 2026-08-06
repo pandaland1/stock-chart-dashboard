@@ -58,32 +58,153 @@
         </div>
 
         <div class="tool-groups">
-          <div class="segmented-control" role="group" aria-label="차트 기간">
-            <button type="button" data-period="3M">3M</button>
-            <button type="button" data-period="6M">6M</button>
-            <button type="button" data-period="1Y" class="is-active" aria-pressed="true">1Y</button>
-            <button type="button" data-period="2Y">2Y</button>
-            <button type="button" data-period="ALL">ALL</button>
+          <div class="interval-and-range">
+            <p class="interval-badge" aria-label="차트 간격 1일 일봉">
+              <strong>1D</strong><span>일봉</span>
+            </p>
+
+            <div class="range-picker">
+              <span class="control-label">화면 범위</span>
+              <div class="segmented-control" role="group" aria-label="화면에 표시할 기간">
+                <button type="button" data-period="3M">3개월</button>
+                <button type="button" data-period="6M">6개월</button>
+                <button type="button" data-period="1Y" class="is-active" aria-pressed="true">1년</button>
+                <button type="button" data-period="2Y">2년</button>
+                <button type="button" data-period="ALL">전체</button>
+              </div>
+            </div>
           </div>
 
-          <div class="indicator-toggles" role="group" aria-label="지표 표시 설정">
-            <button type="button" data-series-toggle="volume" aria-pressed="true">
-              <span class="toggle-check" aria-hidden="true">✓</span>거래량
+          <div class="chart-actions" role="group" aria-label="차트 도구">
+            <button id="vertical-pan-button" type="button" aria-pressed="false">
+              <span aria-hidden="true">↕</span> 가격 이동
             </button>
-            <button type="button" data-series-toggle="sma120" aria-pressed="true">
-              <span class="line-swatch sma120" aria-hidden="true"></span>SMA120
+            <button id="measure-button" type="button" aria-pressed="false">
+              <span aria-hidden="true">↗</span> 측정
             </button>
-            <button type="button" data-series-toggle="sma200" aria-pressed="true">
-              <span class="line-swatch sma200" aria-hidden="true"></span>SMA200
+            <button id="auto-fit-button" type="button">
+              <span aria-hidden="true">⌁</span> 자동 맞춤
             </button>
-            <button type="button" data-series-toggle="vwma100" aria-pressed="true">
-              <span class="line-swatch vwma100" aria-hidden="true"></span>VWMA
-            </button>
-            <button type="button" data-series-toggle="bands" aria-pressed="true">
-              <span class="line-swatch bands" aria-hidden="true"></span>BB
+            <button
+              id="indicator-settings-toggle"
+              type="button"
+              aria-expanded="false"
+              aria-controls="indicator-settings"
+            >
+              <span aria-hidden="true">⚙</span> 지표 설정
             </button>
           </div>
+
+          <p id="data-range" class="data-range">1D 일봉 데이터를 확인하고 있습니다.</p>
         </div>
+
+        <aside
+          id="indicator-settings"
+          class="indicator-settings"
+          aria-label="지표별 표시, 색상, 굵기 설정"
+          hidden
+        >
+          <header>
+            <div>
+              <strong>지표 설정</strong>
+              <span>선마다 표시·색상·굵기를 따로 조절합니다.</span>
+            </div>
+            <button id="indicator-settings-close" type="button" aria-label="지표 설정 닫기">×</button>
+          </header>
+
+          <div class="indicator-setting-list">
+            <div class="indicator-setting-row volume-setting-row">
+              <label class="indicator-visibility">
+                <input type="checkbox" data-volume-visible checked />
+                <span>거래량</span>
+              </label>
+              <span class="setting-note">막대 표시</span>
+            </div>
+
+            <div class="indicator-setting-row" data-indicator-row="sma120">
+              <label class="indicator-visibility">
+                <input type="checkbox" data-indicator-visible="sma120" checked />
+                <span>SMA120</span>
+              </label>
+              <label class="colour-control">색상 <input type="color" data-indicator-color="sma120" value="#f04438" /></label>
+              <label class="width-control">굵기
+                <select data-indicator-width="sma120" aria-label="SMA120 선 굵기">
+                  <option value="1">1px</option><option value="2" selected>2px</option><option value="3">3px</option><option value="4">4px</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="indicator-setting-row" data-indicator-row="sma200">
+              <label class="indicator-visibility">
+                <input type="checkbox" data-indicator-visible="sma200" checked />
+                <span>SMA200</span>
+              </label>
+              <label class="colour-control">색상 <input type="color" data-indicator-color="sma200" value="#3f6df6" /></label>
+              <label class="width-control">굵기
+                <select data-indicator-width="sma200" aria-label="SMA200 선 굵기">
+                  <option value="1">1px</option><option value="2">2px</option><option value="3" selected>3px</option><option value="4">4px</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="indicator-setting-row" data-indicator-row="vwma100">
+              <label class="indicator-visibility">
+                <input type="checkbox" data-indicator-visible="vwma100" checked />
+                <span>VWMA100</span>
+              </label>
+              <label class="colour-control">색상 <input type="color" data-indicator-color="vwma100" value="#f47a2a" /></label>
+              <label class="width-control">굵기
+                <select data-indicator-width="vwma100" aria-label="VWMA100 선 굵기">
+                  <option value="1">1px</option><option value="2" selected>2px</option><option value="3">3px</option><option value="4">4px</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="indicator-setting-row" data-indicator-row="bbUpper">
+              <label class="indicator-visibility">
+                <input type="checkbox" data-indicator-visible="bbUpper" checked />
+                <span>BB Upper</span>
+              </label>
+              <label class="colour-control">색상 <input type="color" data-indicator-color="bbUpper" value="#c43ee8" /></label>
+              <label class="width-control">굵기
+                <select data-indicator-width="bbUpper" aria-label="볼린저 밴드 상단선 굵기">
+                  <option value="1" selected>1px</option><option value="2">2px</option><option value="3">3px</option><option value="4">4px</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="indicator-setting-row" data-indicator-row="bbBasis">
+              <label class="indicator-visibility">
+                <input type="checkbox" data-indicator-visible="bbBasis" checked />
+                <span>BB Basis</span>
+              </label>
+              <label class="colour-control">색상 <input type="color" data-indicator-color="bbBasis" value="#9b5de5" /></label>
+              <label class="width-control">굵기
+                <select data-indicator-width="bbBasis" aria-label="볼린저 밴드 중심선 굵기">
+                  <option value="1" selected>1px</option><option value="2">2px</option><option value="3">3px</option><option value="4">4px</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="indicator-setting-row" data-indicator-row="bbLower">
+              <label class="indicator-visibility">
+                <input type="checkbox" data-indicator-visible="bbLower" checked />
+                <span>BB Lower</span>
+              </label>
+              <label class="colour-control">색상 <input type="color" data-indicator-color="bbLower" value="#7048d7" /></label>
+              <label class="width-control">굵기
+                <select data-indicator-width="bbLower" aria-label="볼린저 밴드 하단선 굵기">
+                  <option value="1" selected>1px</option><option value="2">2px</option><option value="3">3px</option><option value="4">4px</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div class="indicator-settings-footer">
+            <span>설정은 이 브라우저에 저장됩니다.</span>
+            <button id="indicator-settings-reset" type="button">기본값 복원</button>
+          </div>
+        </aside>
       </section>
 
       <section class="chart-shell" aria-label="주가 차트 영역">
@@ -101,9 +222,17 @@
               <span class="legend-name vwma100">VWMA100</span>
               <span id="legend-vwma100">—</span>
             </button>
-            <button type="button" data-legend-toggle="bands">
-              <span class="legend-name bands">BB U / M / L</span>
-              <span id="legend-bands">— / — / —</span>
+            <button type="button" data-legend-toggle="bbUpper">
+              <span class="legend-name bb-upper">BB U</span>
+              <span id="legend-bb-upper">—</span>
+            </button>
+            <button type="button" data-legend-toggle="bbBasis">
+              <span class="legend-name bb-basis">BB M</span>
+              <span id="legend-bb-basis">—</span>
+            </button>
+            <button type="button" data-legend-toggle="bbLower">
+              <span class="legend-name bb-lower">BB L</span>
+              <span id="legend-bb-lower">—</span>
             </button>
           </div>
 
@@ -132,6 +261,22 @@
           tabindex="0"
           aria-label="일봉 캔들 차트. 마우스 휠로 확대 및 축소하고 드래그해 이동할 수 있습니다."
         ></div>
+
+        <div id="measurement-layer" class="measurement-layer" hidden aria-hidden="true">
+          <div id="measurement-box" class="measurement-box"></div>
+          <div id="measurement-label" class="measurement-label">
+            <strong id="measurement-change">—</strong>
+            <span id="measurement-prices">—</span>
+            <span id="measurement-dates">—</span>
+          </div>
+        </div>
+
+        <div class="interaction-guide">
+          <span id="interaction-hint"><kbd>Shift</kbd> + 드래그로 등락률 측정</span>
+          <button id="clear-measurement-button" type="button" hidden>측정 지우기</button>
+        </div>
+
+        <p id="measurement-summary" class="sr-only" aria-live="polite"></p>
 
         <div id="chart-status" class="chart-status" role="status" aria-live="polite">
           <span class="spinner" aria-hidden="true"></span>

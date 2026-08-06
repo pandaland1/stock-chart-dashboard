@@ -20,8 +20,6 @@
         mobileTitle: "SMA120",
         color: "#f04438",
         lineWidth: 2,
-        group: "sma120",
-        labelTextColor: "#ffffff",
       }),
       sma200: Object.freeze({
         field: "sma200",
@@ -29,8 +27,6 @@
         mobileTitle: "SMA200",
         color: "#3f6df6",
         lineWidth: 3,
-        group: "sma200",
-        labelTextColor: "#ffffff",
       }),
       vwma100: Object.freeze({
         field: "vwma100",
@@ -38,8 +34,6 @@
         mobileTitle: "VWMA",
         color: "#f47a2a",
         lineWidth: 2,
-        group: "vwma100",
-        labelTextColor: "#111827",
       }),
       bbBasis: Object.freeze({
         field: "bbBasis",
@@ -47,8 +41,6 @@
         mobileTitle: "BB M",
         color: "#9b5de5",
         lineWidth: 1,
-        group: "bands",
-        labelTextColor: "#ffffff",
       }),
       bbUpper: Object.freeze({
         field: "bbUpper",
@@ -56,8 +48,6 @@
         mobileTitle: "BB U",
         color: "#c43ee8",
         lineWidth: 1,
-        group: "bands",
-        labelTextColor: "#ffffff",
       }),
       bbLower: Object.freeze({
         field: "bbLower",
@@ -65,8 +55,6 @@
         mobileTitle: "BB L",
         color: "#7048d7",
         lineWidth: 1,
-        group: "bands",
-        labelTextColor: "#ffffff",
       }),
     }),
   });
@@ -88,21 +76,20 @@
     }),
   });
 
-  const SERIES_GROUPS = Object.freeze({
-    volume: ["volume"],
-    sma120: ["sma120"],
-    sma200: ["sma200"],
-    vwma100: ["vwma100"],
-    bands: ["bbBasis", "bbUpper", "bbLower"],
-  });
-
-  const DEFAULT_VISIBILITY = Object.freeze({
-    volume: true,
-    sma120: true,
-    sma200: true,
-    vwma100: true,
-    bands: true,
-  });
+  const INDICATOR_STORAGE_KEY = "market-lens-indicator-settings-v1";
+  const HEX_COLOUR_PATTERN = /^#[0-9a-f]{6}$/i;
+  const DEFAULT_INDICATOR_STATE = Object.freeze(
+    Object.fromEntries(
+      Object.entries(CHART_PALETTE.indicators).map(([key, config]) => [
+        key,
+        Object.freeze({
+          visible: true,
+          color: config.color,
+          lineWidth: config.lineWidth,
+        }),
+      ])
+    )
+  );
 
   const PERIOD_OFFSETS = Object.freeze({
     "3M": Object.freeze({ months: 3 }),
@@ -137,12 +124,18 @@
       this.recordByDate = new Map();
       this.loadSequence = 0;
       this.isMobile = window.innerWidth <= 760;
+      this.pointerInteraction = null;
+      this.measurement = null;
+      this.shiftKeyDown = false;
+      const indicatorPreferences = this.readIndicatorPreferences();
       this.state = {
         symbol: null,
         data: [],
         selectedPeriod: "1Y",
         theme: this.readThemePreference(),
-        visibility: { ...DEFAULT_VISIBILITY },
+        volumeVisible: indicatorPreferences.volumeVisible,
+        activeTool: "navigate",
+        indicators: indicatorPreferences.indicators,
       };
     }
 
@@ -169,9 +162,26 @@
         generatedAt: byId("generated-at"),
         footerGeneratedAt: byId("footer-generated-at"),
         footerTradeDate: byId("footer-trade-date"),
+        dataRange: byId("data-range"),
         themeToggle: byId("theme-toggle"),
         themeIcon: document.querySelector(".theme-icon"),
         themeText: document.querySelector(".theme-text"),
+        verticalPanButton: byId("vertical-pan-button"),
+        measureButton: byId("measure-button"),
+        autoFitButton: byId("auto-fit-button"),
+        indicatorSettingsToggle: byId("indicator-settings-toggle"),
+        indicatorSettings: byId("indicator-settings"),
+        indicatorSettingsClose: byId("indicator-settings-close"),
+        indicatorSettingsReset: byId("indicator-settings-reset"),
+        interactionHint: byId("interaction-hint"),
+        clearMeasurementButton: byId("clear-measurement-button"),
+        measurementLayer: byId("measurement-layer"),
+        measurementBox: byId("measurement-box"),
+        measurementLabel: byId("measurement-label"),
+        measurementChange: byId("measurement-change"),
+        measurementPrices: byId("measurement-prices"),
+        measurementDates: byId("measurement-dates"),
+        measurementSummary: byId("measurement-summary"),
         cursorDate: byId("cursor-date"),
         cursorFields: {
           open: byId("cursor-open"),
@@ -190,7 +200,9 @@
           sma120: byId("legend-sma120"),
           sma200: byId("legend-sma200"),
           vwma100: byId("legend-vwma100"),
-          bands: byId("legend-bands"),
+          bbUpper: byId("legend-bb-upper"),
+          bbBasis: byId("legend-bb-basis"),
+          bbLower: byId("legend-bb-lower"),
         },
       };
     }
@@ -198,7 +210,9 @@
     async initialise() {
       this.applyCssSeriesColours();
       this.applyDocumentTheme();
+      this.syncIndicatorControls();
       this.bindControls();
+      this.setActiveTool("navigate");
 
       if (!window.LightweightCharts) {
         throw new Error(
@@ -331,10 +345,12 @@
         scaleMargins: { top: 0.78, bottom: 0 },
       });
 
-      Object.entries(CHART_PALETTE.indicators).forEach(([key, config]) => {
+      Object.keys(CHART_PALETTE.indicators).forEach((key) => {
+        const style = this.state.indicators[key];
         this.series[key] = this.chart.addSeries(library.LineSeries, {
-          color: config.color,
-          lineWidth: config.lineWidth,
+          color: style.color,
+          lineWidth: style.lineWidth,
+          visible: style.visible,
           priceLineVisible: false,
           lastValueVisible: false,
           crosshairMarkerVisible: false,
@@ -344,6 +360,7 @@
 
       this.chart.subscribeCrosshairMove((parameter) => this.handleCrosshairMove(parameter));
       this.installResponsiveSizing();
+      this.installChartInteractions();
     }
 
     installResponsiveSizing() {
@@ -377,6 +394,311 @@
       resize();
     }
 
+    installChartInteractions() {
+      const capture = { capture: true };
+      this.refs.chart.addEventListener(
+        "pointerdown",
+        (event) => this.handleChartPointerDown(event),
+        capture
+      );
+      this.refs.chart.addEventListener(
+        "pointermove",
+        (event) => this.handleChartPointerMove(event),
+        capture
+      );
+      this.refs.chart.addEventListener(
+        "pointerup",
+        (event) => this.handleChartPointerUp(event),
+        capture
+      );
+      this.refs.chart.addEventListener(
+        "pointercancel",
+        (event) => this.handleChartPointerUp(event),
+        capture
+      );
+    }
+
+    handleChartPointerDown(event) {
+      if (event.button !== 0 || !this.state.data.length || this.pointerInteraction) return;
+
+      const wantsMeasurement = event.shiftKey || this.state.activeTool === "measure";
+      const wantsVerticalPan = this.state.activeTool === "pan-y";
+      if (!wantsMeasurement && !wantsVerticalPan) return;
+
+      const point = this.getChartPoint(event);
+      if (!point.insidePlot) return;
+
+      this.blockNativeChartGesture(event);
+      if (wantsMeasurement) {
+        this.beginMeasurement(event, point);
+      } else {
+        this.beginVerticalPan(event, point);
+      }
+    }
+
+    handleChartPointerMove(event) {
+      if (!this.pointerInteraction || event.pointerId !== this.pointerInteraction.pointerId) return;
+      this.blockNativeChartGesture(event);
+      const point = this.getChartPoint(event, { clampToPlot: true });
+
+      if (this.pointerInteraction.type === "measure") {
+        this.updateMeasurement(point);
+      } else if (this.pointerInteraction.type === "pan-y") {
+        this.updateVerticalPan(point);
+      }
+    }
+
+    handleChartPointerUp(event) {
+      if (!this.pointerInteraction || event.pointerId !== this.pointerInteraction.pointerId) return;
+      this.blockNativeChartGesture(event);
+      const point = this.getChartPoint(event, { clampToPlot: true });
+
+      if (this.pointerInteraction.type === "measure") {
+        this.updateMeasurement(point);
+      } else if (this.pointerInteraction.type === "pan-y") {
+        this.updateVerticalPan(point);
+      }
+      this.finishPointerInteraction(event.pointerId);
+    }
+
+    beginMeasurement(event, point) {
+      const startIndex = this.getDataIndexAtCoordinate(point.x);
+      const startPrice = this.series.candles.coordinateToPrice(point.y);
+      if (startIndex === null || !Number.isFinite(startPrice)) return;
+
+      this.clearMeasurement({ announce: false });
+      this.pointerInteraction = {
+        type: "measure",
+        pointerId: event.pointerId,
+        startPoint: point,
+        startIndex,
+        startPrice,
+      };
+      this.refs.chart.classList.add("is-measuring");
+      this.capturePointer(event.pointerId);
+      this.updateMeasurement(point);
+    }
+
+    updateMeasurement(point) {
+      const interaction = this.pointerInteraction;
+      if (!interaction || interaction.type !== "measure") return;
+
+      const endIndex = this.getDataIndexAtCoordinate(point.x);
+      const endPrice = this.series.candles.coordinateToPrice(point.y);
+      if (endIndex === null || !Number.isFinite(endPrice)) return;
+
+      const startRecord = this.state.data[interaction.startIndex];
+      const endRecord = this.state.data[endIndex];
+      const change = endPrice - interaction.startPrice;
+      const changePercent = interaction.startPrice === 0 ? 0 : (change / interaction.startPrice) * 100;
+      const isNegative = change < 0;
+      const sign = isNegative ? "−" : "+";
+      const barCount = Math.abs(endIndex - interaction.startIndex) + 1;
+
+      const left = Math.min(interaction.startPoint.x, point.x);
+      const top = Math.min(interaction.startPoint.y, point.y);
+      const width = Math.abs(point.x - interaction.startPoint.x);
+      const height = Math.abs(point.y - interaction.startPoint.y);
+      Object.assign(this.refs.measurementBox.style, {
+        left: `${left}px`,
+        top: `${top}px`,
+        width: `${Math.max(1, width)}px`,
+        height: `${Math.max(1, height)}px`,
+      });
+
+      this.refs.measurementLayer.hidden = false;
+      this.refs.measurementLayer.setAttribute("aria-hidden", "false");
+      this.refs.measurementLayer.classList.toggle("is-negative", isNegative);
+      this.refs.measurementChange.textContent = `${sign}$${this.formatPrice(Math.abs(change))} (${sign}${this.formatPrice(Math.abs(changePercent))}%)`;
+      this.refs.measurementPrices.textContent = `$${this.formatPrice(interaction.startPrice)} → $${this.formatPrice(endPrice)} · ${barCount}봉`;
+      this.refs.measurementDates.textContent = `${startRecord.time} → ${endRecord.time}`;
+      this.refs.clearMeasurementButton.hidden = false;
+
+      const plot = this.getPlotSize();
+      const labelWidth = Math.min(this.refs.measurementLabel.offsetWidth || 250, plot.width - 16);
+      const labelHeight = this.refs.measurementLabel.offsetHeight || 72;
+      const preferredLeft = point.x + 12 + labelWidth <= plot.width
+        ? point.x + 12
+        : point.x - labelWidth - 12;
+      const preferredTop = point.y - labelHeight - 12 >= 0
+        ? point.y - labelHeight - 12
+        : point.y + 12;
+      Object.assign(this.refs.measurementLabel.style, {
+        left: `${this.clamp(preferredLeft, 8, Math.max(8, plot.width - labelWidth - 8))}px`,
+        top: `${this.clamp(preferredTop, 8, Math.max(8, plot.height - labelHeight - 8))}px`,
+      });
+
+      this.measurement = {
+        startDate: startRecord.time,
+        endDate: endRecord.time,
+        startPrice: interaction.startPrice,
+        endPrice,
+        change,
+        changePercent,
+        barCount,
+      };
+      this.refs.measurementSummary.textContent = `${startRecord.time}부터 ${endRecord.time}까지 ${barCount}개 일봉, ${sign}${this.formatPrice(Math.abs(changePercent))}퍼센트`;
+    }
+
+    beginVerticalPan(event, point) {
+      const scale = this.series.candles.priceScale();
+      let range = scale.getVisibleRange();
+      if (!range) {
+        const plot = this.getPlotSize();
+        const bottom = this.series.candles.coordinateToPrice(plot.height);
+        const top = this.series.candles.coordinateToPrice(0);
+        if (!Number.isFinite(bottom) || !Number.isFinite(top)) return;
+        range = { from: Math.min(bottom, top), to: Math.max(bottom, top) };
+      }
+
+      const from = Math.min(range.from, range.to);
+      const to = Math.max(range.from, range.to);
+      if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) return;
+
+      scale.setAutoScale(false);
+      this.pointerInteraction = {
+        type: "pan-y",
+        pointerId: event.pointerId,
+        startPoint: point,
+        startRange: { from, to },
+      };
+      this.refs.chart.classList.add("is-price-panning");
+      this.capturePointer(event.pointerId);
+    }
+
+    updateVerticalPan(point) {
+      const interaction = this.pointerInteraction;
+      if (!interaction || interaction.type !== "pan-y") return;
+
+      const plot = this.getPlotSize();
+      const span = interaction.startRange.to - interaction.startRange.from;
+      const shift = ((point.y - interaction.startPoint.y) / plot.height) * span;
+      this.series.candles.priceScale().setVisibleRange({
+        from: interaction.startRange.from + shift,
+        to: interaction.startRange.to + shift,
+      });
+    }
+
+    finishPointerInteraction(pointerId) {
+      this.refs.chart.classList.remove("is-measuring", "is-price-panning");
+      try {
+        if (this.refs.chart.hasPointerCapture(pointerId)) {
+          this.refs.chart.releasePointerCapture(pointerId);
+        }
+      } catch (error) {
+        console.warn("포인터 캡처를 해제하지 못했습니다.", error);
+      }
+      this.pointerInteraction = null;
+    }
+
+    capturePointer(pointerId) {
+      try {
+        this.refs.chart.setPointerCapture(pointerId);
+      } catch (error) {
+        console.warn("포인터를 캡처하지 못했습니다.", error);
+      }
+    }
+
+    blockNativeChartGesture(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    }
+
+    getPlotSize() {
+      const timeScale = this.chart?.timeScale();
+      const width = timeScale?.width() || this.refs.chart.clientWidth;
+      const height = this.refs.chart.clientHeight - (timeScale?.height() || 0);
+      return {
+        width: Math.max(1, width),
+        height: Math.max(1, height),
+      };
+    }
+
+    getChartPoint(event, { clampToPlot = false } = {}) {
+      const rect = this.refs.chart.getBoundingClientRect();
+      const plot = this.getPlotSize();
+      const rawX = event.clientX - rect.left;
+      const rawY = event.clientY - rect.top;
+      return {
+        x: clampToPlot ? this.clamp(rawX, 0, plot.width) : rawX,
+        y: clampToPlot ? this.clamp(rawY, 0, plot.height) : rawY,
+        insidePlot: rawX >= 0 && rawX <= plot.width && rawY >= 0 && rawY <= plot.height,
+      };
+    }
+
+    getDataIndexAtCoordinate(x) {
+      const logical = this.chart?.timeScale().coordinateToLogical(x);
+      if (!Number.isFinite(logical) || !this.state.data.length) return null;
+      return this.clamp(Math.round(logical), 0, this.state.data.length - 1);
+    }
+
+    clearMeasurement({ announce = true } = {}) {
+      this.measurement = null;
+      this.refs.measurementLayer.hidden = true;
+      this.refs.measurementLayer.setAttribute("aria-hidden", "true");
+      this.refs.measurementLayer.classList.remove("is-negative");
+      this.refs.clearMeasurementButton.hidden = true;
+      if (announce) this.refs.measurementSummary.textContent = "측정값을 지웠습니다.";
+    }
+
+    toggleTool(tool) {
+      this.setActiveTool(this.state.activeTool === tool ? "navigate" : tool);
+    }
+
+    setActiveTool(tool) {
+      this.state.activeTool = ["navigate", "pan-y", "measure"].includes(tool)
+        ? tool
+        : "navigate";
+      this.refs.verticalPanButton.setAttribute(
+        "aria-pressed",
+        String(this.state.activeTool === "pan-y")
+      );
+      this.refs.measureButton.setAttribute(
+        "aria-pressed",
+        String(this.state.activeTool === "measure")
+      );
+      this.refs.chart.dataset.tool = this.state.activeTool;
+
+      if (this.state.activeTool === "pan-y") {
+        this.refs.interactionHint.textContent = "차트를 위아래로 드래그해 가격축 이동";
+      } else if (this.state.activeTool === "measure") {
+        this.refs.interactionHint.textContent = "차트에서 드래그해 등락폭·등락률 측정";
+      } else {
+        this.refs.interactionHint.textContent = "Shift + 드래그로 등락률 측정";
+      }
+    }
+
+    resetPriceScale({ announce = true } = {}) {
+      if (!this.series.candles) return;
+      this.series.candles.priceScale().setAutoScale(true);
+      if (announce) {
+        this.refs.measurementSummary.textContent = "가격축을 자동 맞춤으로 복원했습니다.";
+      }
+    }
+
+    handleGlobalKeyDown(event) {
+      if (event.key === "Shift") {
+        this.shiftKeyDown = true;
+        this.refs.chart.classList.add("is-shift-measure");
+      }
+      if (event.key === "Escape") {
+        this.clearMeasurement();
+        this.setIndicatorSettingsOpen(false);
+        this.setActiveTool("navigate");
+      }
+    }
+
+    handleGlobalKeyUp(event) {
+      if (event.key !== "Shift") return;
+      this.shiftKeyDown = false;
+      this.refs.chart.classList.remove("is-shift-measure");
+    }
+
+    clamp(value, minimum, maximum) {
+      return Math.min(maximum, Math.max(minimum, value));
+    }
+
     bindControls() {
       this.refs.stockSelect.addEventListener("change", () => {
         void this.loadSymbol(this.refs.stockSelect.value);
@@ -386,12 +708,70 @@
         button.addEventListener("click", () => this.selectPeriod(button.dataset.period));
       });
 
-      document.querySelectorAll("[data-series-toggle]").forEach((button) => {
-        button.addEventListener("click", () => this.toggleSeriesGroup(button.dataset.seriesToggle));
+      document.querySelectorAll("[data-indicator-visible]").forEach((input) => {
+        input.addEventListener("change", () => {
+          this.updateIndicatorStyle(input.dataset.indicatorVisible, {
+            visible: input.checked,
+          });
+        });
+      });
+
+      document.querySelectorAll("[data-indicator-color]").forEach((input) => {
+        input.addEventListener("input", () => {
+          this.updateIndicatorStyle(input.dataset.indicatorColor, {
+            color: input.value,
+          });
+        });
+      });
+
+      document.querySelectorAll("[data-indicator-width]").forEach((select) => {
+        select.addEventListener("change", () => {
+          this.updateIndicatorStyle(select.dataset.indicatorWidth, {
+            lineWidth: Number(select.value),
+          });
+        });
+      });
+
+      document.querySelector("[data-volume-visible]")?.addEventListener("change", (event) => {
+        this.state.volumeVisible = event.currentTarget.checked;
+        this.applyIndicatorStyles();
       });
 
       document.querySelectorAll("[data-legend-toggle]").forEach((button) => {
-        button.addEventListener("click", () => this.toggleSeriesGroup(button.dataset.legendToggle));
+        button.addEventListener("click", () => this.toggleIndicator(button.dataset.legendToggle));
+      });
+
+      this.refs.verticalPanButton.addEventListener("click", () => this.toggleTool("pan-y"));
+      this.refs.measureButton.addEventListener("click", () => this.toggleTool("measure"));
+      this.refs.autoFitButton.addEventListener("click", () => this.resetPriceScale());
+      this.refs.clearMeasurementButton.addEventListener("click", () => this.clearMeasurement());
+
+      this.refs.indicatorSettingsToggle.addEventListener("click", () => {
+        this.setIndicatorSettingsOpen(this.refs.indicatorSettings.hidden);
+      });
+      this.refs.indicatorSettingsClose.addEventListener("click", () => {
+        this.setIndicatorSettingsOpen(false);
+      });
+      this.refs.indicatorSettingsReset.addEventListener("click", () => {
+        this.resetIndicatorSettings();
+      });
+
+      document.addEventListener("pointerdown", (event) => {
+        if (this.refs.indicatorSettings.hidden) return;
+        if (
+          this.refs.indicatorSettings.contains(event.target) ||
+          this.refs.indicatorSettingsToggle.contains(event.target)
+        ) {
+          return;
+        }
+        this.setIndicatorSettingsOpen(false);
+      });
+
+      window.addEventListener("keydown", (event) => this.handleGlobalKeyDown(event));
+      window.addEventListener("keyup", (event) => this.handleGlobalKeyUp(event));
+      window.addEventListener("blur", () => {
+        this.shiftKeyDown = false;
+        this.refs.chart.classList.remove("is-shift-measure");
       });
 
       this.refs.themeToggle.addEventListener("click", () => this.toggleTheme());
@@ -419,11 +799,14 @@
         const records = this.validateRecords(payload, symbol);
         this.state.data = records;
         this.recordByDate = new Map(records.map((record) => [record.time, record]));
+        this.clearMeasurement({ announce: false });
         this.setSeriesData(records);
         this.renderQuote(summary, records[records.length - 1]);
+        this.renderDataRange(records);
         this.renderLatestLegend(records[records.length - 1]);
         this.renderCrosshairInfo(records[records.length - 1], true);
-        this.applyVisibility();
+        this.applyIndicatorStyles({ persist: false });
+        this.resetPriceScale({ announce: false });
         this.selectPeriod(this.state.selectedPeriod, { updateButtons: true });
         this.hideStatus();
       } catch (error) {
@@ -478,13 +861,14 @@
 
       Object.entries(CHART_PALETTE.indicators).forEach(([key, config]) => {
         const value = latest[config.field];
-        if (!this.state.visibility[config.group] || !Number.isFinite(value)) return;
+        const style = this.state.indicators[key];
+        if (!style.visible || !Number.isFinite(value)) return;
 
         this.addPriceLine(this.series[key], {
           price: value,
-          color: config.color,
-          axisLabelColor: config.color,
-          axisLabelTextColor: config.labelTextColor,
+          color: style.color,
+          axisLabelColor: style.color,
+          axisLabelTextColor: this.getContrastingTextColour(style.color),
           lineWidth: 1,
           lineStyle: library.LineStyle.Dashed,
           lineVisible: false,
@@ -510,26 +894,136 @@
       this.priceLines = [];
     }
 
-    toggleSeriesGroup(group) {
-      if (!(group in this.state.visibility)) return;
-      this.state.visibility[group] = !this.state.visibility[group];
-      this.applyVisibility();
+    toggleIndicator(key) {
+      if (!(key in this.state.indicators)) return;
+      this.updateIndicatorStyle(key, {
+        visible: !this.state.indicators[key].visible,
+      });
     }
 
-    applyVisibility() {
-      Object.entries(SERIES_GROUPS).forEach(([group, keys]) => {
-        const visible = this.state.visibility[group];
-        keys.forEach((key) => this.series[key]?.applyOptions({ visible }));
+    updateIndicatorStyle(key, patch) {
+      const current = this.state.indicators[key];
+      if (!current) return;
 
-        document.querySelectorAll(`[data-series-toggle="${group}"]`).forEach((button) => {
-          button.setAttribute("aria-pressed", String(visible));
-        });
-        document.querySelectorAll(`[data-legend-toggle="${group}"]`).forEach((button) => {
-          button.classList.toggle("is-hidden", !visible);
-          button.setAttribute("aria-pressed", String(visible));
+      const next = { ...current };
+      if (typeof patch.visible === "boolean") next.visible = patch.visible;
+      if (typeof patch.color === "string" && HEX_COLOUR_PATTERN.test(patch.color)) {
+        next.color = patch.color.toLowerCase();
+      }
+      if (Number.isFinite(patch.lineWidth)) {
+        next.lineWidth = Math.min(4, Math.max(1, Math.round(patch.lineWidth)));
+      }
+
+      this.state.indicators[key] = next;
+      this.applyIndicatorStyles();
+    }
+
+    applyIndicatorStyles({ persist = true } = {}) {
+      this.series.volume?.applyOptions({ visible: this.state.volumeVisible });
+
+      Object.entries(this.state.indicators).forEach(([key, style]) => {
+        this.series[key]?.applyOptions({
+          visible: style.visible,
+          color: style.color,
+          lineWidth: style.lineWidth,
         });
       });
+
+      this.applyCssSeriesColours();
+      this.syncIndicatorControls();
       this.rebuildPriceLines();
+      if (persist) this.persistIndicatorPreferences();
+    }
+
+    syncIndicatorControls() {
+      const volumeInput = document.querySelector("[data-volume-visible]");
+      if (volumeInput) volumeInput.checked = this.state.volumeVisible;
+
+      Object.entries(this.state.indicators).forEach(([key, style]) => {
+        const visibilityInput = document.querySelector(`[data-indicator-visible="${key}"]`);
+        const colourInput = document.querySelector(`[data-indicator-color="${key}"]`);
+        const widthSelect = document.querySelector(`[data-indicator-width="${key}"]`);
+        const settingsRow = document.querySelector(`[data-indicator-row="${key}"]`);
+
+        if (visibilityInput) visibilityInput.checked = style.visible;
+        if (colourInput) colourInput.value = style.color;
+        if (widthSelect) widthSelect.value = String(style.lineWidth);
+        settingsRow?.classList.toggle("is-disabled", !style.visible);
+
+        document.querySelectorAll(`[data-legend-toggle="${key}"]`).forEach((button) => {
+          button.classList.toggle("is-hidden", !style.visible);
+          button.setAttribute("aria-pressed", String(style.visible));
+        });
+      });
+    }
+
+    setIndicatorSettingsOpen(open) {
+      this.refs.indicatorSettings.hidden = !open;
+      this.refs.indicatorSettingsToggle.setAttribute("aria-expanded", String(open));
+      if (open) this.syncIndicatorControls();
+    }
+
+    resetIndicatorSettings() {
+      this.state.volumeVisible = true;
+      this.state.indicators = this.createDefaultIndicatorState();
+      this.applyIndicatorStyles();
+    }
+
+    createDefaultIndicatorState() {
+      return Object.fromEntries(
+        Object.entries(DEFAULT_INDICATOR_STATE).map(([key, value]) => [key, { ...value }])
+      );
+    }
+
+    readIndicatorPreferences() {
+      const fallback = {
+        volumeVisible: true,
+        indicators: this.createDefaultIndicatorState(),
+      };
+
+      try {
+        const raw = localStorage.getItem(INDICATOR_STORAGE_KEY);
+        if (!raw) return fallback;
+        const saved = JSON.parse(raw);
+        if (!saved || typeof saved !== "object") return fallback;
+
+        Object.keys(fallback.indicators).forEach((key) => {
+          const candidate = saved.indicators?.[key];
+          if (!candidate || typeof candidate !== "object") return;
+          if (typeof candidate.visible === "boolean") {
+            fallback.indicators[key].visible = candidate.visible;
+          }
+          if (typeof candidate.color === "string" && HEX_COLOUR_PATTERN.test(candidate.color)) {
+            fallback.indicators[key].color = candidate.color.toLowerCase();
+          }
+          if (Number.isFinite(candidate.lineWidth)) {
+            fallback.indicators[key].lineWidth = Math.min(
+              4,
+              Math.max(1, Math.round(candidate.lineWidth))
+            );
+          }
+        });
+        if (typeof saved.volumeVisible === "boolean") {
+          fallback.volumeVisible = saved.volumeVisible;
+        }
+      } catch (error) {
+        console.warn("지표 설정을 불러오지 못했습니다.", error);
+      }
+      return fallback;
+    }
+
+    persistIndicatorPreferences() {
+      try {
+        localStorage.setItem(
+          INDICATOR_STORAGE_KEY,
+          JSON.stringify({
+            volumeVisible: this.state.volumeVisible,
+            indicators: this.state.indicators,
+          })
+        );
+      } catch (error) {
+        console.warn("지표 설정을 저장하지 못했습니다.", error);
+      }
     }
 
     selectPeriod(period, { updateButtons = true } = {}) {
@@ -616,9 +1110,19 @@
       this.refs.legend.sma120.textContent = this.formatPrice(record.sma120);
       this.refs.legend.sma200.textContent = this.formatPrice(record.sma200);
       this.refs.legend.vwma100.textContent = this.formatPrice(record.vwma100);
-      this.refs.legend.bands.textContent = [record.bbUpper, record.bbBasis, record.bbLower]
-        .map((value) => this.formatPrice(value))
-        .join(" / ");
+      this.refs.legend.bbUpper.textContent = this.formatPrice(record.bbUpper);
+      this.refs.legend.bbBasis.textContent = this.formatPrice(record.bbBasis);
+      this.refs.legend.bbLower.textContent = this.formatPrice(record.bbLower);
+    }
+
+    renderDataRange(records) {
+      if (!records.length) {
+        this.refs.dataRange.textContent = "1D 일봉 데이터 없음";
+        return;
+      }
+      const first = records[0].time;
+      const latest = records[records.length - 1].time;
+      this.refs.dataRange.textContent = `1D 일봉 ${INTEGER_FORMATTER.format(records.length)}개 · ${first} ~ ${latest}`;
     }
 
     renderQuote(summary, latest) {
@@ -709,10 +1213,12 @@
 
     applyCssSeriesColours() {
       const root = document.documentElement.style;
-      root.setProperty("--sma120", CHART_PALETTE.indicators.sma120.color);
-      root.setProperty("--sma200", CHART_PALETTE.indicators.sma200.color);
-      root.setProperty("--vwma100", CHART_PALETTE.indicators.vwma100.color);
-      root.setProperty("--bands", CHART_PALETTE.indicators.bbBasis.color);
+      root.setProperty("--sma120", this.state.indicators.sma120.color);
+      root.setProperty("--sma200", this.state.indicators.sma200.color);
+      root.setProperty("--vwma100", this.state.indicators.vwma100.color);
+      root.setProperty("--bb-upper", this.state.indicators.bbUpper.color);
+      root.setProperty("--bb-basis", this.state.indicators.bbBasis.color);
+      root.setProperty("--bb-lower", this.state.indicators.bbLower.color);
     }
 
     readThemePreference() {
@@ -781,6 +1287,15 @@
       return Number.isFinite(value) ? PRICE_FORMATTER.format(value) : "—";
     }
 
+    getContrastingTextColour(hexColour) {
+      if (!HEX_COLOUR_PATTERN.test(hexColour)) return "#ffffff";
+      const red = Number.parseInt(hexColour.slice(1, 3), 16);
+      const green = Number.parseInt(hexColour.slice(3, 5), 16);
+      const blue = Number.parseInt(hexColour.slice(5, 7), 16);
+      const luminance = (red * 299 + green * 587 + blue * 114) / 255000;
+      return luminance > 0.58 ? "#111827" : "#ffffff";
+    }
+
     formatVolume(value) {
       return Number.isFinite(value) ? INTEGER_FORMATTER.format(value) : "—";
     }
@@ -839,6 +1354,7 @@
     let dashboard;
     try {
       dashboard = new StockChartDashboard();
+      window.marketLensDashboard = dashboard;
     } catch (error) {
       console.error(error);
       return;
