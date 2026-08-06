@@ -192,7 +192,6 @@ footer div {
 #indicator-settings-toggle,
 #indicator-settings-close,
 #indicator-settings-reset,
-#clear-measurement-button,
 #retry-button {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -216,7 +215,6 @@ footer div {
 #indicator-settings-toggle:hover,
 #indicator-settings-close:hover,
 #indicator-settings-reset:hover,
-#clear-measurement-button:hover,
 #retry-button:hover {
   background: var(--surface-hover);
   color: var(--text);
@@ -588,7 +586,6 @@ footer div {
   cursor: ns-resize;
 }
 
-.stock-chart[data-tool="measure"],
 .stock-chart.is-shift-measure,
 .stock-chart.is-measuring {
   cursor: crosshair;
@@ -667,12 +664,12 @@ footer div {
   pointer-events: none;
 }
 
-.interaction-guide > span,
-#clear-measurement-button {
+.interaction-guide > span {
   border: 1px solid var(--border-soft);
   background: color-mix(in srgb, var(--chart-bg), transparent 10%);
   color: var(--text-muted);
   font-size: 9px;
+  white-space: nowrap;
   backdrop-filter: blur(8px);
 }
 
@@ -691,10 +688,8 @@ footer div {
   font-size: 8px;
 }
 
-#clear-measurement-button {
-  min-height: 29px;
-  padding: 0 8px;
-  pointer-events: auto;
+.price-scale-hint {
+  color: var(--text-secondary) !important;
 }
 
 .sr-only {

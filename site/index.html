@@ -9,9 +9,9 @@
     />
     <meta name="color-scheme" content="dark light" />
     <title>Market Lens · 미국 주식 일봉 차트</title>
-    <link rel="stylesheet" href="./assets/style.css?v=2" />
+    <link rel="stylesheet" href="./assets/style.css?v=3" />
     <script defer src="./assets/vendor/lightweight-charts.standalone.production.js"></script>
-    <script defer src="./assets/app.js?v=2"></script>
+    <script defer src="./assets/app.js?v=3"></script>
   </head>
   <body>
     <a class="skip-link" href="#stock-chart">차트로 바로가기</a>
@@ -78,9 +78,6 @@
           <div class="chart-actions" role="group" aria-label="차트 도구">
             <button id="vertical-pan-button" type="button" aria-pressed="false">
               <span aria-hidden="true">↕</span> 가격 이동
-            </button>
-            <button id="measure-button" type="button" aria-pressed="false">
-              <span aria-hidden="true">↗</span> 측정
             </button>
             <button id="auto-fit-button" type="button">
               <span aria-hidden="true">⌁</span> 자동 맞춤
@@ -259,7 +256,7 @@
           class="stock-chart"
           role="application"
           tabindex="0"
-          aria-label="일봉 캔들 차트. 마우스 휠로 확대 및 축소하고 드래그해 이동할 수 있습니다."
+          aria-label="일봉 캔들 차트. Shift를 누른 채 마우스를 움직여 등락률을 측정하고, 오른쪽 가격축을 드래그해 확대 및 축소할 수 있습니다."
         ></div>
 
         <div id="measurement-layer" class="measurement-layer" hidden aria-hidden="true">
@@ -272,8 +269,8 @@
         </div>
 
         <div class="interaction-guide">
-          <span id="interaction-hint"><kbd>Shift</kbd> + 드래그로 등락률 측정</span>
-          <button id="clear-measurement-button" type="button" hidden>측정 지우기</button>
+          <span id="interaction-hint"><kbd>Shift</kbd> 누른 채 마우스 이동 · 떼면 측정 삭제</span>
+          <span class="price-scale-hint">오른쪽 가격축 드래그 · 확대/축소</span>
         </div>
 
         <p id="measurement-summary" class="sr-only" aria-live="polite"></p>

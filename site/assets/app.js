@@ -125,6 +125,8 @@
       this.loadSequence = 0;
       this.isMobile = window.innerWidth <= 760;
       this.pointerInteraction = null;
+      this.shiftMeasurement = null;
+      this.lastChartPoint = null;
       this.measurement = null;
       this.shiftKeyDown = false;
       const indicatorPreferences = this.readIndicatorPreferences();
@@ -167,14 +169,12 @@
         themeIcon: document.querySelector(".theme-icon"),
         themeText: document.querySelector(".theme-text"),
         verticalPanButton: byId("vertical-pan-button"),
-        measureButton: byId("measure-button"),
         autoFitButton: byId("auto-fit-button"),
         indicatorSettingsToggle: byId("indicator-settings-toggle"),
         indicatorSettings: byId("indicator-settings"),
         indicatorSettingsClose: byId("indicator-settings-close"),
         indicatorSettingsReset: byId("indicator-settings-reset"),
         interactionHint: byId("interaction-hint"),
-        clearMeasurementButton: byId("clear-measurement-button"),
         measurementLayer: byId("measurement-layer"),
         measurementBox: byId("measurement-box"),
         measurementLabel: byId("measurement-label"),
@@ -312,7 +312,8 @@
           vertTouchDrag: false,
         },
         handleScale: {
-          axisPressedMouseMove: true,
+          axisPressedMouseMove: { time: true, price: true },
+          axisDoubleClickReset: { time: true, price: true },
           mouseWheel: true,
           pinch: true,
         },
@@ -416,72 +417,81 @@
         (event) => this.handleChartPointerUp(event),
         capture
       );
+      this.refs.chart.addEventListener("pointerleave", () => {
+        this.lastChartPoint = null;
+      });
     }
 
     handleChartPointerDown(event) {
       if (event.button !== 0 || !this.state.data.length || this.pointerInteraction) return;
 
-      const wantsMeasurement = event.shiftKey || this.state.activeTool === "measure";
-      const wantsVerticalPan = this.state.activeTool === "pan-y";
-      if (!wantsMeasurement && !wantsVerticalPan) return;
-
       const point = this.getChartPoint(event);
+      if (event.shiftKey || this.shiftKeyDown) {
+        this.blockNativeChartGesture(event);
+        if (point.insidePlot && !this.shiftMeasurement) {
+          this.beginShiftMeasurement(point);
+        }
+        return;
+      }
+
+      const wantsVerticalPan = this.state.activeTool === "pan-y";
+      if (!wantsVerticalPan) return;
+
       if (!point.insidePlot) return;
 
       this.blockNativeChartGesture(event);
-      if (wantsMeasurement) {
-        this.beginMeasurement(event, point);
-      } else {
-        this.beginVerticalPan(event, point);
-      }
+      this.beginVerticalPan(event, point);
     }
 
     handleChartPointerMove(event) {
+      const rawPoint = this.getChartPoint(event);
+      this.lastChartPoint = rawPoint.insidePlot ? rawPoint : null;
+
+      if (this.shiftKeyDown) {
+        if (event.buttons & 1) this.blockNativeChartGesture(event);
+        if (!rawPoint.insidePlot) return;
+        const point = this.getChartPoint(event, { clampToPlot: true });
+        if (!this.shiftMeasurement) this.beginShiftMeasurement(point);
+        else this.updateMeasurement(point);
+        return;
+      }
+
       if (!this.pointerInteraction || event.pointerId !== this.pointerInteraction.pointerId) return;
       this.blockNativeChartGesture(event);
-      const point = this.getChartPoint(event, { clampToPlot: true });
-
-      if (this.pointerInteraction.type === "measure") {
-        this.updateMeasurement(point);
-      } else if (this.pointerInteraction.type === "pan-y") {
-        this.updateVerticalPan(point);
-      }
+      this.updateVerticalPan(this.getChartPoint(event, { clampToPlot: true }));
     }
 
     handleChartPointerUp(event) {
+      if (this.shiftKeyDown) {
+        this.blockNativeChartGesture(event);
+        return;
+      }
       if (!this.pointerInteraction || event.pointerId !== this.pointerInteraction.pointerId) return;
       this.blockNativeChartGesture(event);
       const point = this.getChartPoint(event, { clampToPlot: true });
 
-      if (this.pointerInteraction.type === "measure") {
-        this.updateMeasurement(point);
-      } else if (this.pointerInteraction.type === "pan-y") {
-        this.updateVerticalPan(point);
-      }
+      this.updateVerticalPan(point);
       this.finishPointerInteraction(event.pointerId);
     }
 
-    beginMeasurement(event, point) {
+    beginShiftMeasurement(point) {
       const startIndex = this.getDataIndexAtCoordinate(point.x);
       const startPrice = this.series.candles.coordinateToPrice(point.y);
       if (startIndex === null || !Number.isFinite(startPrice)) return;
 
       this.clearMeasurement({ announce: false });
-      this.pointerInteraction = {
-        type: "measure",
-        pointerId: event.pointerId,
+      this.shiftMeasurement = {
         startPoint: point,
         startIndex,
         startPrice,
       };
       this.refs.chart.classList.add("is-measuring");
-      this.capturePointer(event.pointerId);
       this.updateMeasurement(point);
     }
 
     updateMeasurement(point) {
-      const interaction = this.pointerInteraction;
-      if (!interaction || interaction.type !== "measure") return;
+      const interaction = this.shiftMeasurement;
+      if (!interaction) return;
 
       const endIndex = this.getDataIndexAtCoordinate(point.x);
       const endPrice = this.series.candles.coordinateToPrice(point.y);
@@ -512,7 +522,6 @@
       this.refs.measurementChange.textContent = `${sign}$${this.formatPrice(Math.abs(change))} (${sign}${this.formatPrice(Math.abs(changePercent))}%)`;
       this.refs.measurementPrices.textContent = `$${this.formatPrice(interaction.startPrice)} → $${this.formatPrice(endPrice)} · ${barCount}봉`;
       this.refs.measurementDates.textContent = `${startRecord.time} → ${endRecord.time}`;
-      this.refs.clearMeasurementButton.hidden = false;
 
       const plot = this.getPlotSize();
       const labelWidth = Math.min(this.refs.measurementLabel.offsetWidth || 250, plot.width - 16);
@@ -580,7 +589,7 @@
     }
 
     finishPointerInteraction(pointerId) {
-      this.refs.chart.classList.remove("is-measuring", "is-price-panning");
+      this.refs.chart.classList.remove("is-price-panning");
       try {
         if (this.refs.chart.hasPointerCapture(pointerId)) {
           this.refs.chart.releasePointerCapture(pointerId);
@@ -589,6 +598,15 @@
         console.warn("포인터 캡처를 해제하지 못했습니다.", error);
       }
       this.pointerInteraction = null;
+    }
+
+    finishShiftMeasurement({ announce = true } = {}) {
+      this.shiftMeasurement = null;
+      this.refs.chart.classList.remove("is-measuring", "is-shift-measure");
+      this.clearMeasurement({ announce: false });
+      if (announce) {
+        this.refs.measurementSummary.textContent = "Shift 키를 떼어 측정 박스를 삭제했습니다.";
+      }
     }
 
     capturePointer(pointerId) {
@@ -634,11 +652,12 @@
     }
 
     clearMeasurement({ announce = true } = {}) {
+      this.shiftMeasurement = null;
       this.measurement = null;
+      this.refs.chart.classList.remove("is-measuring");
       this.refs.measurementLayer.hidden = true;
       this.refs.measurementLayer.setAttribute("aria-hidden", "true");
       this.refs.measurementLayer.classList.remove("is-negative");
-      this.refs.clearMeasurementButton.hidden = true;
       if (announce) this.refs.measurementSummary.textContent = "측정값을 지웠습니다.";
     }
 
@@ -647,25 +666,19 @@
     }
 
     setActiveTool(tool) {
-      this.state.activeTool = ["navigate", "pan-y", "measure"].includes(tool)
+      this.state.activeTool = ["navigate", "pan-y"].includes(tool)
         ? tool
         : "navigate";
       this.refs.verticalPanButton.setAttribute(
         "aria-pressed",
         String(this.state.activeTool === "pan-y")
       );
-      this.refs.measureButton.setAttribute(
-        "aria-pressed",
-        String(this.state.activeTool === "measure")
-      );
       this.refs.chart.dataset.tool = this.state.activeTool;
 
       if (this.state.activeTool === "pan-y") {
         this.refs.interactionHint.textContent = "차트를 위아래로 드래그해 가격축 이동";
-      } else if (this.state.activeTool === "measure") {
-        this.refs.interactionHint.textContent = "차트에서 드래그해 등락폭·등락률 측정";
       } else {
-        this.refs.interactionHint.textContent = "Shift + 드래그로 등락률 측정";
+        this.refs.interactionHint.textContent = "Shift 누른 채 마우스 이동 · 떼면 측정 삭제";
       }
     }
 
@@ -679,11 +692,17 @@
 
     handleGlobalKeyDown(event) {
       if (event.key === "Shift") {
+        if (this.shiftKeyDown || event.repeat) return;
         this.shiftKeyDown = true;
         this.refs.chart.classList.add("is-shift-measure");
+        this.refs.interactionHint.textContent = "Shift 유지 중 · 마우스를 움직여 구간 측정";
+        if (this.lastChartPoint && !this.pointerInteraction) {
+          this.beginShiftMeasurement(this.lastChartPoint);
+        }
       }
       if (event.key === "Escape") {
-        this.clearMeasurement();
+        this.shiftKeyDown = false;
+        this.finishShiftMeasurement();
         this.setIndicatorSettingsOpen(false);
         this.setActiveTool("navigate");
       }
@@ -692,7 +711,8 @@
     handleGlobalKeyUp(event) {
       if (event.key !== "Shift") return;
       this.shiftKeyDown = false;
-      this.refs.chart.classList.remove("is-shift-measure");
+      this.finishShiftMeasurement();
+      this.setActiveTool(this.state.activeTool);
     }
 
     clamp(value, minimum, maximum) {
@@ -742,9 +762,7 @@
       });
 
       this.refs.verticalPanButton.addEventListener("click", () => this.toggleTool("pan-y"));
-      this.refs.measureButton.addEventListener("click", () => this.toggleTool("measure"));
       this.refs.autoFitButton.addEventListener("click", () => this.resetPriceScale());
-      this.refs.clearMeasurementButton.addEventListener("click", () => this.clearMeasurement());
 
       this.refs.indicatorSettingsToggle.addEventListener("click", () => {
         this.setIndicatorSettingsOpen(this.refs.indicatorSettings.hidden);
@@ -771,7 +789,8 @@
       window.addEventListener("keyup", (event) => this.handleGlobalKeyUp(event));
       window.addEventListener("blur", () => {
         this.shiftKeyDown = false;
-        this.refs.chart.classList.remove("is-shift-measure");
+        this.finishShiftMeasurement({ announce: false });
+        this.setActiveTool(this.state.activeTool);
       });
 
       this.refs.themeToggle.addEventListener("click", () => this.toggleTheme());
