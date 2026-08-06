@@ -138,7 +138,6 @@
         selectedPeriod: "1Y",
         theme: this.readThemePreference(),
         volumeVisible: indicatorPreferences.volumeVisible,
-        activeTool: "navigate",
         indicators: indicatorPreferences.indicators,
       };
     }
@@ -170,7 +169,6 @@
         themeToggle: byId("theme-toggle"),
         themeIcon: document.querySelector(".theme-icon"),
         themeText: document.querySelector(".theme-text"),
-        verticalPanButton: byId("vertical-pan-button"),
         autoFitButton: byId("auto-fit-button"),
         indicatorSettingsToggle: byId("indicator-settings-toggle"),
         indicatorSettings: byId("indicator-settings"),
@@ -216,7 +214,6 @@
       this.applyDocumentTheme();
       this.syncIndicatorControls();
       this.bindControls();
-      this.setActiveTool("navigate");
 
       if (!window.LightweightCharts) {
         throw new Error(
@@ -266,7 +263,7 @@
         layout: {
           background: { type: library.ColorType.Solid, color: theme.background },
           textColor: theme.text,
-          fontSize: this.isMobile ? 12 : 14,
+          fontSize: this.isMobile ? 13 : 15,
           fontFamily:
             'Inter, Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
           attributionLogo: true,
@@ -294,7 +291,7 @@
           visible: true,
           alignLabels: true,
           entireTextOnly: true,
-          minimumWidth: this.isMobile ? 88 : 116,
+          minimumWidth: this.isMobile ? 98 : 124,
           borderVisible: false,
           scaleMargins: { top: 0.08, bottom: 0.24 },
         },
@@ -311,7 +308,7 @@
         },
         handleScroll: {
           mouseWheel: true,
-          pressedMouseMove: true,
+          pressedMouseMove: false,
           horzTouchDrag: true,
           vertTouchDrag: false,
         },
@@ -377,12 +374,12 @@
 
         this.chart.resize(width, height);
         this.chart.priceScale("right").applyOptions({
-          minimumWidth: nextIsMobile ? 88 : 116,
+          minimumWidth: nextIsMobile ? 98 : 124,
           alignLabels: true,
           entireTextOnly: true,
         });
         this.chart.timeScale().applyOptions({ rightOffset: nextIsMobile ? 4 : 8 });
-        this.chart.applyOptions({ layout: { fontSize: nextIsMobile ? 12 : 14 } });
+        this.chart.applyOptions({ layout: { fontSize: nextIsMobile ? 13 : 15 } });
 
         if (nextIsMobile !== this.isMobile) {
           this.isMobile = nextIsMobile;
@@ -431,6 +428,7 @@
 
     handleChartPointerDown(event) {
       if (event.button !== 0 || !this.state.data.length || this.pointerInteraction) return;
+      if (event.pointerType === "touch") return;
 
       const point = this.getChartPoint(event);
       if (event.shiftKey || this.shiftKeyDown) {
@@ -441,13 +439,10 @@
         return;
       }
 
-      const wantsVerticalPan = this.state.activeTool === "pan-y";
-      if (!wantsVerticalPan) return;
-
       if (!point.insidePlot) return;
 
       this.blockNativeChartGesture(event);
-      this.beginVerticalPan(event, point);
+      this.beginChartPan(event, point);
     }
 
     handleChartPointerMove(event) {
@@ -469,7 +464,7 @@
 
       if (!this.pointerInteraction || event.pointerId !== this.pointerInteraction.pointerId) return;
       this.blockNativeChartGesture(event);
-      this.updateVerticalPan(this.getChartPoint(event, { clampToPlot: true }));
+      this.updateChartPan(this.getChartPoint(event, { clampToPlot: true }));
     }
 
     handleChartPointerUp(event) {
@@ -484,7 +479,7 @@
       this.blockNativeChartGesture(event);
       const point = this.getChartPoint(event, { clampToPlot: true });
 
-      this.updateVerticalPan(point);
+      this.updateChartPan(point);
       this.finishPointerInteraction(event.pointerId);
     }
 
@@ -563,7 +558,7 @@
       this.refs.measurementSummary.textContent = `${startRecord.time}부터 ${endRecord.time}까지 ${barCount}개 일봉, ${sign}${this.formatPrice(Math.abs(changePercent))}퍼센트`;
     }
 
-    beginVerticalPan(event, point) {
+    beginChartPan(event, point) {
       const scale = this.series.candles.priceScale();
       let range = scale.getVisibleRange();
       if (!range) {
@@ -578,32 +573,52 @@
       const to = Math.max(range.from, range.to);
       if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) return;
 
+      const logicalRange = this.chart.timeScale().getVisibleLogicalRange();
+      if (
+        !logicalRange ||
+        !Number.isFinite(logicalRange.from) ||
+        !Number.isFinite(logicalRange.to) ||
+        logicalRange.to <= logicalRange.from
+      ) {
+        return;
+      }
+
       scale.setAutoScale(false);
       this.pointerInteraction = {
-        type: "pan-y",
+        type: "chart-pan",
         pointerId: event.pointerId,
         startPoint: point,
-        startRange: { from, to },
+        startPriceRange: { from, to },
+        startLogicalRange: { from: logicalRange.from, to: logicalRange.to },
       };
-      this.refs.chart.classList.add("is-price-panning");
+      this.refs.chart.classList.add("is-chart-panning");
       this.capturePointer(event.pointerId);
     }
 
-    updateVerticalPan(point) {
+    updateChartPan(point) {
       const interaction = this.pointerInteraction;
-      if (!interaction || interaction.type !== "pan-y") return;
+      if (!interaction || interaction.type !== "chart-pan") return;
 
       const plot = this.getPlotSize();
-      const span = interaction.startRange.to - interaction.startRange.from;
-      const shift = ((point.y - interaction.startPoint.y) / plot.height) * span;
+      const priceSpan = interaction.startPriceRange.to - interaction.startPriceRange.from;
+      const priceShift = ((point.y - interaction.startPoint.y) / plot.height) * priceSpan;
       this.series.candles.priceScale().setVisibleRange({
-        from: interaction.startRange.from + shift,
-        to: interaction.startRange.to + shift,
+        from: interaction.startPriceRange.from + priceShift,
+        to: interaction.startPriceRange.to + priceShift,
+      });
+
+      const logicalSpan =
+        interaction.startLogicalRange.to - interaction.startLogicalRange.from;
+      const logicalShift =
+        ((point.x - interaction.startPoint.x) / plot.width) * logicalSpan;
+      this.chart.timeScale().setVisibleLogicalRange({
+        from: interaction.startLogicalRange.from - logicalShift,
+        to: interaction.startLogicalRange.to - logicalShift,
       });
     }
 
     finishPointerInteraction(pointerId) {
-      this.refs.chart.classList.remove("is-price-panning");
+      this.refs.chart.classList.remove("is-chart-panning");
       try {
         if (this.refs.chart.hasPointerCapture(pointerId)) {
           this.refs.chart.releasePointerCapture(pointerId);
@@ -675,25 +690,9 @@
       if (announce) this.refs.measurementSummary.textContent = "측정값을 지웠습니다.";
     }
 
-    toggleTool(tool) {
-      this.setActiveTool(this.state.activeTool === tool ? "navigate" : tool);
-    }
-
-    setActiveTool(tool) {
-      this.state.activeTool = ["navigate", "pan-y"].includes(tool)
-        ? tool
-        : "navigate";
-      this.refs.verticalPanButton.setAttribute(
-        "aria-pressed",
-        String(this.state.activeTool === "pan-y")
-      );
-      this.refs.chart.dataset.tool = this.state.activeTool;
-
-      if (this.state.activeTool === "pan-y") {
-        this.refs.interactionHint.textContent = "차트를 위아래로 드래그해 가격축 이동";
-      } else {
-        this.refs.interactionHint.textContent = "Shift 누른 채 마우스 이동 · 떼면 측정 삭제";
-      }
+    restoreInteractionHint() {
+      this.refs.interactionHint.textContent =
+        "마우스 드래그 · 상하좌우 이동 · Shift 측정";
     }
 
     resetPriceScale({ announce = true } = {}) {
@@ -708,6 +707,9 @@
       if (event.key === "Shift") {
         if (this.shiftKeyDown || event.repeat) return;
         this.shiftKeyDown = true;
+        if (this.pointerInteraction) {
+          this.finishPointerInteraction(this.pointerInteraction.pointerId);
+        }
         this.refs.chart.classList.add("is-shift-measure");
         this.refs.interactionHint.textContent = "Shift 유지 중 · 마우스를 움직여 구간 측정";
         if (this.lastChartPoint && !this.pointerInteraction) {
@@ -718,7 +720,7 @@
         this.shiftKeyDown = false;
         this.finishShiftMeasurement();
         this.setIndicatorSettingsOpen(false);
-        this.setActiveTool("navigate");
+        this.restoreInteractionHint();
       }
     }
 
@@ -726,7 +728,7 @@
       if (event.key !== "Shift") return;
       this.shiftKeyDown = false;
       this.finishShiftMeasurement();
-      this.setActiveTool(this.state.activeTool);
+      this.restoreInteractionHint();
     }
 
     clamp(value, minimum, maximum) {
@@ -775,7 +777,6 @@
         button.addEventListener("click", () => this.openIndicatorEditor(button.dataset.legendToggle));
       });
 
-      this.refs.verticalPanButton.addEventListener("click", () => this.toggleTool("pan-y"));
       this.refs.autoFitButton.addEventListener("click", () => this.resetPriceScale());
 
       this.refs.indicatorSettingsToggle.addEventListener("click", () => {
@@ -805,7 +806,10 @@
       window.addEventListener("blur", () => {
         this.shiftKeyDown = false;
         this.finishShiftMeasurement({ announce: false });
-        this.setActiveTool(this.state.activeTool);
+        if (this.pointerInteraction) {
+          this.finishPointerInteraction(this.pointerInteraction.pointerId);
+        }
+        this.restoreInteractionHint();
       });
 
       this.refs.themeToggle.addEventListener("click", () => this.toggleTheme());

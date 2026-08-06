@@ -62,6 +62,8 @@ body {
 body {
   background: var(--page-bg);
   color: var(--text);
+  font-size: 15px;
+  line-height: 1.45;
   overflow-x: hidden;
 }
 
@@ -104,8 +106,8 @@ a:focus-visible,
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 68px;
-  padding: 10px clamp(14px, 2.4vw, 36px);
+  min-height: 72px;
+  padding: 11px clamp(16px, 2.6vw, 40px);
   border-bottom: 1px solid var(--border-soft);
   background: color-mix(in srgb, var(--page-bg), transparent 4%);
 }
@@ -122,15 +124,15 @@ a:focus-visible,
 }
 
 .brand {
-  gap: 12px;
+  gap: 13px;
 }
 
 .brand-mark {
   display: flex;
   align-items: end;
   gap: 3px;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   padding: 6px;
   border: 1px solid color-mix(in srgb, var(--sma200), transparent 55%);
   border-radius: 9px;
@@ -160,7 +162,7 @@ footer div {
 }
 
 .brand h1 {
-  font-size: 17px;
+  font-size: 19px;
   line-height: 1.1;
   letter-spacing: -0.02em;
 }
@@ -168,7 +170,7 @@ footer div {
 .brand p {
   margin-top: 3px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .header-actions {
@@ -180,7 +182,7 @@ footer div {
   align-items: center;
   gap: 7px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .status-dot {
@@ -208,10 +210,10 @@ footer div {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  min-height: 38px;
-  padding: 0 12px;
+  min-height: 42px;
+  padding: 0 14px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .icon-button:hover,
@@ -235,9 +237,9 @@ footer div {
   display: grid;
   grid-template-columns: minmax(260px, auto) auto 1fr;
   align-items: center;
-  gap: 18px;
-  min-height: 76px;
-  padding: 10px clamp(14px, 2.4vw, 36px);
+  gap: 20px;
+  min-height: 84px;
+  padding: 12px clamp(16px, 2.6vw, 40px);
   border-bottom: 1px solid var(--border-soft);
   background: var(--surface);
 }
@@ -251,7 +253,7 @@ footer div {
 
 .stock-picker label {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
 }
@@ -272,20 +274,20 @@ footer div {
 
 #stock-select {
   width: 100%;
-  min-height: 42px;
+  min-height: 46px;
   appearance: none;
   padding: 0 30px 0 12px;
   border: 1px solid var(--border);
   border-radius: 9px;
   background: var(--surface-raised);
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 800;
 }
 
 .company-name {
   overflow: hidden;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -297,13 +299,13 @@ footer div {
 }
 
 #current-price {
-  font-size: 21px;
+  font-size: 24px;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.025em;
 }
 
 .price-change {
-  font-size: 13px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
 }
@@ -314,7 +316,7 @@ footer div {
 .trade-date {
   flex-basis: 100%;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .tool-groups {
@@ -332,7 +334,7 @@ footer div {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  min-height: 40px;
+  min-height: 44px;
   margin: 0;
   padding: 0 10px;
   border: 1px solid color-mix(in srgb, var(--positive), transparent 38%);
@@ -343,7 +345,7 @@ footer div {
 
 .interval-badge strong {
   color: var(--positive);
-  font-size: 13px;
+  font-size: 14px;
   letter-spacing: 0.03em;
 }
 
@@ -351,7 +353,7 @@ footer div {
 .control-label,
 .data-range {
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .range-picker {
@@ -376,12 +378,12 @@ footer div {
 
 .segmented-control button {
   min-width: 44px;
-  min-height: 34px;
-  padding: 0 8px;
+  min-height: 38px;
+  padding: 0 10px;
   border-color: transparent;
   background: transparent;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 750;
 }
 
@@ -400,10 +402,10 @@ footer div {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 40px;
-  padding: 0 9px;
+  min-height: 44px;
+  padding: 0 12px;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 12px;
   white-space: nowrap;
 }
 
@@ -458,14 +460,14 @@ footer div {
 }
 
 .indicator-settings > header strong {
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .indicator-settings > header span,
 .indicator-settings-footer,
 .setting-note {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 #indicator-settings-close {
@@ -488,7 +490,7 @@ footer div {
   grid-template-columns: minmax(120px, 1fr) auto auto;
   align-items: center;
   gap: 10px;
-  min-height: 42px;
+  min-height: 46px;
   padding: 5px 8px;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -527,20 +529,20 @@ footer div {
 }
 
 .indicator-visibility {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 750;
 }
 
 .indicator-visibility input {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   accent-color: var(--positive);
 }
 
 .colour-control,
 .width-control {
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .colour-control input[type="color"] {
@@ -553,12 +555,12 @@ footer div {
 }
 
 .width-control select {
-  min-height: 30px;
+  min-height: 32px;
   padding: 0 7px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--surface-raised);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .indicator-settings-footer {
@@ -567,10 +569,10 @@ footer div {
 }
 
 #indicator-settings-reset {
-  min-height: 34px;
+  min-height: 36px;
   padding: 0 10px;
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .legend-name.sma120 { color: var(--sma120); }
@@ -597,9 +599,8 @@ footer div {
   height: 100%;
 }
 
-.stock-chart[data-tool="pan-y"],
-.stock-chart.is-price-panning {
-  cursor: ns-resize;
+.stock-chart.is-chart-panning {
+  cursor: grabbing;
 }
 
 .stock-chart.is-shift-measure,
@@ -647,7 +648,7 @@ footer div {
   background: color-mix(in srgb, var(--chart-bg), transparent 4%);
   color: var(--text-secondary);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3);
-  font-size: 9px;
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
   backdrop-filter: blur(10px);
 }
@@ -658,7 +659,7 @@ footer div {
 
 .measurement-label strong {
   color: var(--positive);
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .measurement-layer.is-negative .measurement-label strong {
@@ -684,7 +685,7 @@ footer div {
   border: 1px solid var(--border-soft);
   background: color-mix(in srgb, var(--chart-bg), transparent 10%);
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 10px;
   white-space: nowrap;
   backdrop-filter: blur(8px);
 }
@@ -701,7 +702,7 @@ footer div {
   background: var(--surface-raised);
   color: var(--text-secondary);
   font-family: inherit;
-  font-size: 8px;
+  font-size: 9px;
 }
 
 .price-scale-hint {
@@ -723,7 +724,7 @@ footer div {
 .chart-hud {
   position: absolute;
   top: 10px;
-  right: 116px;
+  right: 124px;
   left: 12px;
   z-index: 3;
   display: flex;
@@ -744,12 +745,12 @@ footer div {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  min-height: 28px;
-  padding: 0 7px;
+  min-height: 30px;
+  padding: 0 8px;
   border-color: var(--border-soft);
   background: color-mix(in srgb, var(--chart-bg), transparent 12%);
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
   backdrop-filter: blur(8px);
 }
@@ -801,7 +802,7 @@ footer div {
   border-radius: 5px;
   background: color-mix(in srgb, var(--focus), transparent 86%);
   color: var(--text);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
 }
 
@@ -821,7 +822,7 @@ footer div {
   border-radius: 5px;
   background: color-mix(in srgb, currentColor, transparent 93%);
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -872,13 +873,13 @@ footer div {
 }
 
 .chart-status strong {
-  font-size: 15px;
+  font-size: 16px;
 }
 
 .chart-status span:not(.spinner) {
   max-width: 480px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.55;
 }
 
@@ -908,7 +909,7 @@ footer {
   align-items: start;
   padding: 22px clamp(14px, 2.4vw, 36px) 32px;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.55;
 }
 
@@ -920,7 +921,7 @@ footer div {
 
 footer strong {
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 footer p {
@@ -955,13 +956,13 @@ footer a {
 
 @media (max-width: 760px) {
   .topbar {
-    min-height: 58px;
-    padding: 8px 12px;
+    min-height: 62px;
+    padding: 9px 12px;
   }
 
   .brand-mark {
-    width: 29px;
-    height: 29px;
+    width: 32px;
+    height: 32px;
   }
 
   .brand p,
@@ -992,7 +993,7 @@ footer a {
   }
 
   #stock-select {
-    min-height: 40px;
+    min-height: 42px;
   }
 
   .quote-summary {
@@ -1002,11 +1003,11 @@ footer a {
   }
 
   #current-price {
-    font-size: 18px;
+    font-size: 20px;
   }
 
   .price-change {
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .trade-date {
@@ -1047,12 +1048,12 @@ footer a {
   .segmented-control button {
     min-width: 0;
     padding: 0 4px;
-    font-size: 9px;
+    font-size: 11px;
   }
 
   .chart-actions {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 3px;
     width: 100%;
   }
@@ -1062,7 +1063,7 @@ footer a {
     min-width: 0;
     min-height: 38px;
     padding: 0 4px;
-    font-size: 9px;
+    font-size: 11px;
   }
 
   .data-range {
@@ -1086,13 +1087,13 @@ footer a {
   }
 
   .chart-shell {
-    height: max(480px, calc(100svh - 276px));
-    min-height: 480px;
+    height: max(500px, calc(100svh - 292px));
+    min-height: 500px;
   }
 
   .chart-hud {
     top: 7px;
-    right: 91px;
+    right: 101px;
     left: 7px;
     gap: 5px;
   }
@@ -1102,9 +1103,9 @@ footer a {
   }
 
   .latest-legend button {
-    min-height: 25px;
-    padding: 0 5px;
-    font-size: 8px;
+    min-height: 28px;
+    padding: 0 6px;
+    font-size: 10px;
   }
 
   .crosshair-panel {
@@ -1115,7 +1116,7 @@ footer a {
 
   .crosshair-panel strong {
     margin-bottom: 3px;
-    font-size: 9px;
+    font-size: 11px;
   }
 
   .crosshair-panel dl {
@@ -1124,7 +1125,7 @@ footer a {
 
   .crosshair-panel dl div {
     padding: 2px 4px;
-    font-size: 8px;
+    font-size: 10px;
   }
 
   .interaction-guide {
@@ -1138,11 +1139,11 @@ footer a {
 
   .measurement-label {
     max-width: 210px;
-    font-size: 8px;
+    font-size: 10px;
   }
 
   .measurement-label strong {
-    font-size: 12px;
+    font-size: 14px;
   }
 
   footer {
@@ -1163,7 +1164,7 @@ footer a {
 }
 
 @media (max-width: 430px) {
-  .brand h1 { font-size: 15px; }
+  .brand h1 { font-size: 16px; }
   .stock-picker label { display: none; }
   .stock-picker { grid-template-columns: minmax(100px, 112px); }
   .latest-legend button { padding-inline: 4px; }
