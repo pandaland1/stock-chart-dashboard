@@ -2,17 +2,17 @@
 <html lang="ko" data-theme="dark">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta
       name="description"
       content="미국 주식 일봉·주봉·월봉과 매물대, 종목 비교, SMA120, SMA200, VWMA100, 볼린저 밴드를 확인하는 개인용 차트"
     />
     <meta name="color-scheme" content="dark light" />
     <title>Market Lens · 미국 주식 차트</title>
-    <link rel="stylesheet" href="./assets/style.css?v=8" />
+    <link rel="stylesheet" href="./assets/style.css?v=9" />
     <script defer src="./assets/vendor/lightweight-charts.standalone.production.js"></script>
     <script defer src="./assets/chart-utils.js?v=1"></script>
-    <script defer src="./assets/app.js?v=8"></script>
+    <script defer src="./assets/app.js?v=9"></script>
   </head>
   <body>
     <a class="skip-link" href="#stock-chart">차트로 바로가기</a>
@@ -332,7 +332,7 @@
 
           <div id="comparison-legend" class="comparison-legend" hidden></div>
 
-          <div class="crosshair-panel" aria-live="polite">
+          <div id="crosshair-panel" class="crosshair-panel is-latest" aria-live="polite">
             <strong id="cursor-date">최근 거래일</strong>
             <dl>
               <div class="cursor-field cursor-open"><dt>시</dt><dd id="cursor-open">—</dd></div>

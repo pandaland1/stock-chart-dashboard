@@ -217,6 +217,7 @@
         compareMessage: byId("compare-message"),
         compareCount: byId("compare-count"),
         comparisonLegend: byId("comparison-legend"),
+        crosshairPanel: byId("crosshair-panel"),
         indicatorSettingsToggle: byId("indicator-settings-toggle"),
         indicatorSettings: byId("indicator-settings"),
         indicatorSettingsClose: byId("indicator-settings-close"),
@@ -345,7 +346,7 @@
           visible: true,
           alignLabels: true,
           entireTextOnly: true,
-          minimumWidth: this.isMobile ? 98 : 124,
+          minimumWidth: this.isMobile ? 84 : 124,
           borderVisible: false,
           scaleMargins: { top: 0.08, bottom: 0.24 },
         },
@@ -433,10 +434,10 @@
         this.chart.resize(width, height);
         document.documentElement.style.setProperty(
           "--price-scale-width",
-          `${nextIsMobile ? 98 : 124}px`
+          `${nextIsMobile ? 84 : 124}px`
         );
         this.chart.priceScale("right").applyOptions({
-          minimumWidth: nextIsMobile ? 98 : 124,
+          minimumWidth: nextIsMobile ? 84 : 124,
           alignLabels: true,
           entireTextOnly: true,
         });
@@ -1080,6 +1081,8 @@
         title: this.state.symbol || "종가",
       });
 
+      if (this.isMobile) return;
+
       Object.entries(CHART_PALETTE.indicators).forEach(([key, config]) => {
         const value = latest[config.field];
         const style = this.state.indicators[key];
@@ -1453,7 +1456,7 @@
         if (persist) this.persistComparisonPreferences();
         if (announce) {
           this.refs.compareMessage.textContent =
-            `${normalisedSymbol}을 PLTR 기준 비교에 추가했습니다.`;
+            `${normalisedSymbol} 비교를 PLTR 기준으로 추가했습니다.`;
         }
       } catch (error) {
         this.refs.compareMessage.textContent =
@@ -1731,6 +1734,7 @@
     }
 
     renderCrosshairInfo(record, isLatest) {
+      this.refs.crosshairPanel.classList.toggle("is-latest", isLatest);
       this.refs.cursorDate.textContent = isLatest
         ? `최근 거래일 · ${this.formatTradeDate(record.time)}`
         : this.formatTradeDate(record.time);

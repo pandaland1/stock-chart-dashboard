@@ -1195,8 +1195,12 @@ footer a {
 
 @media (max-width: 760px) {
   .topbar {
-    min-height: 62px;
-    padding: 9px 12px;
+    min-height: calc(62px + env(safe-area-inset-top, 0px));
+    padding:
+      calc(9px + env(safe-area-inset-top, 0px))
+      max(12px, env(safe-area-inset-right, 0px))
+      9px
+      max(12px, env(safe-area-inset-left, 0px));
   }
 
   .brand-mark {
@@ -1220,7 +1224,11 @@ footer a {
     grid-template-columns: 1fr auto;
     gap: 8px 12px;
     min-height: auto;
-    padding: 9px 10px;
+    padding:
+      9px
+      max(10px, env(safe-area-inset-right, 0px))
+      9px
+      max(10px, env(safe-area-inset-left, 0px));
   }
 
   .stock-picker {
@@ -1351,12 +1359,12 @@ footer a {
   }
 
   .chart-shell {
-    height: max(500px, calc(100svh - 350px));
-    min-height: 500px;
+    height: clamp(560px, 72svh, 720px);
+    min-height: 560px;
   }
 
   .volume-profile {
-    width: min(26vw, 110px);
+    width: min(20vw, 68px);
   }
 
   .volume-profile-summary {
@@ -1368,31 +1376,60 @@ footer a {
 
   .chart-hud {
     top: 7px;
-    right: 101px;
+    right: 87px;
     left: 7px;
     gap: 5px;
+    max-width: none;
   }
 
-  .latest-legend {
+  .latest-legend,
+  .comparison-legend {
+    width: 100%;
+    max-width: 100%;
+    flex-wrap: nowrap;
     gap: 3px;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+  }
+
+  .latest-legend::-webkit-scrollbar,
+  .comparison-legend::-webkit-scrollbar {
+    display: none;
   }
 
   .comparison-legend span {
+    flex: 0 0 auto;
     min-height: 23px;
     padding-inline: 5px;
     font-size: 9px;
   }
 
   .latest-legend button {
+    flex: 0 0 auto;
     min-height: 28px;
     padding: 0 6px;
     font-size: 10px;
   }
 
   .crosshair-panel {
+    width: 100%;
     max-width: 100%;
     padding: 5px 6px;
     overflow: hidden;
+  }
+
+  .crosshair-panel.is-latest {
+    display: none;
+  }
+
+  .cursor-sma120,
+  .cursor-sma200,
+  .cursor-vwma100,
+  .cursor-bb-upper,
+  .cursor-bb-basis,
+  .cursor-bb-lower {
+    display: none !important;
   }
 
   .crosshair-panel strong {
@@ -1430,7 +1467,11 @@ footer a {
   footer {
     grid-template-columns: 1fr 1fr;
     gap: 12px;
-    padding: 18px 12px 26px;
+    padding:
+      18px
+      max(12px, env(safe-area-inset-right, 0px))
+      calc(26px + env(safe-area-inset-bottom, 0px))
+      max(12px, env(safe-area-inset-left, 0px));
   }
 
   footer div:first-child {
