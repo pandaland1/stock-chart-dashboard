@@ -36,6 +36,19 @@ def _load_stale_records(path: Path) -> list[dict[str, Any]] | None:
     return payload
 
 
+def _latest_record_date(records: list[dict[str, Any]] | None) -> str | None:
+    """기존 JSON에서 비교 가능한 가장 최근 거래일을 찾는다."""
+
+    if not records:
+        return None
+    dates = [
+        record.get("time")
+        for record in records
+        if isinstance(record, dict) and isinstance(record.get("time"), str)
+    ]
+    return max(dates, default=None)
+
+
 def _error_summary(stock: StockConfig, output_path: Path, message: str) -> dict[str, Any]:
     stale_records = _load_stale_records(output_path)
     if stale_records:
@@ -61,8 +74,10 @@ def run() -> int:
 
     for stock in stocks:
         output_path = SITE_DATA_DIR / f"{stock.symbol}.json"
+        existing_records = _load_stale_records(output_path)
+        minimum_latest_date = _latest_record_date(existing_records)
         try:
-            raw_frame = fetch_stock_data(stock)
+            raw_frame = fetch_stock_data(stock, minimum_latest_date=minimum_latest_date)
             records = dataframe_to_records(calculate_indicators(raw_frame))
             write_json(output_path, records)
             summaries.append(build_stock_summary(stock, records))

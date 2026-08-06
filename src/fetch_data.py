@@ -195,17 +195,44 @@ def fetch_stock_data(
     max_attempts: int = 3,
     retry_delay_seconds: float = 5.0,
     downloader: Callable[[str], pd.DataFrame] = _download,
+    stale_fallback_downloader: Callable[[str], pd.DataFrame] = _download_chart_api,
+    minimum_latest_date: str | pd.Timestamp | None = None,
 ) -> pd.DataFrame:
-    """종목 일봉을 최대 3회 재시도해 가져온다."""
+    """종목 일봉을 재시도하며 기존 데이터보다 과거인 응답은 차단한다."""
 
     if max_attempts < 1:
         raise ValueError("max_attempts는 1 이상이어야 합니다.")
+
+    minimum_timestamp: pd.Timestamp | None = None
+    if minimum_latest_date is not None:
+        minimum_timestamp = pd.Timestamp(minimum_latest_date)
+        if minimum_timestamp.tzinfo is not None:
+            minimum_timestamp = minimum_timestamp.tz_convert(None)
+        minimum_timestamp = minimum_timestamp.normalize()
 
     last_error: Exception | None = None
     for attempt in range(1, max_attempts + 1):
         LOGGER.info("[%s] 데이터 수집 시작 (%d/%d)", stock.symbol, attempt, max_attempts)
         try:
             frame = normalise_yfinance_frame(downloader(stock.symbol), stock.symbol)
+            if minimum_timestamp is not None and frame.index.max() < minimum_timestamp:
+                LOGGER.warning(
+                    "[%s] yfinance 최신 거래일 %s가 기존 데이터 %s보다 과거라 "
+                    "Yahoo Chart API로 다시 조회합니다.",
+                    stock.symbol,
+                    frame.index.max().strftime("%Y-%m-%d"),
+                    minimum_timestamp.strftime("%Y-%m-%d"),
+                )
+                frame = normalise_yfinance_frame(
+                    stale_fallback_downloader(stock.symbol),
+                    stock.symbol,
+                )
+                if frame.index.max() < minimum_timestamp:
+                    raise StockDataError(
+                        f"{stock.symbol}: 새 응답의 최신 거래일 "
+                        f"{frame.index.max().strftime('%Y-%m-%d')}이 기존 데이터 "
+                        f"{minimum_timestamp.strftime('%Y-%m-%d')}보다 과거입니다."
+                    )
             LOGGER.info(
                 "[%s] 데이터 수집 성공: %s ~ %s, %d건",
                 stock.symbol,

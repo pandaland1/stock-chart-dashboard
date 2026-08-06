@@ -76,7 +76,8 @@ stock-chart-dashboard/
 │   ├── fetch_data.py
 │   ├── indicators.py
 │   ├── json_generator.py
-│   └── main.py
+│   ├── main.py
+│   └── sync_deployed_data.py
 ├── site/
 │   ├── index.html
 │   ├── assets/
@@ -181,11 +182,11 @@ gh repo create stock-chart-dashboard --public --source=. --remote=origin --push
 
 워크플로는 다음 조건에서 실행됩니다.
 
-- `main` 브랜치 push
+- `main` 브랜치 push: 현재 Pages와 저장소 중 더 최신인 데이터를 사용해 UI를 배포
 - Actions 탭의 **Run workflow** 수동 실행
 - UTC 기준 월~금 23:17 (`17 23 * * 1-5`)
 
-한국 시간으로는 화~토 오전 8:17이며, 미국 정규장 마감 이후입니다. GitHub 예약 작업은 혼잡도에 따라 다소 늦게 시작할 수 있습니다. 주말이나 미국 휴장일에는 yfinance가 제공하는 마지막 거래일까지 유지됩니다.
+한국 시간으로는 화~토 오전 8:17이며, 미국 정규장 마감 이후입니다. 모든 실행은 먼저 현재 Pages 데이터와 저장소 데이터를 비교해 더 최신인 쪽을 작업 기준으로 삼습니다. `main` push는 외부 시세를 다시 조회하지 않고 그 기준 데이터로 UI만 배포하며, 예약·수동 실행은 이어서 신규 데이터를 수집합니다. yfinance가 기준 거래일보다 오래된 데이터를 반환하면 Yahoo Chart API로 다시 확인하고, 두 응답이 모두 과거이면 기존 데이터를 덮어쓰지 않은 채 배포를 중단합니다. 주말이나 미국 휴장일에는 마지막 거래일까지 유지됩니다.
 
 ## 차트 사용법
 

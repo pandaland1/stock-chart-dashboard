@@ -40,7 +40,11 @@ jobs:
       - name: Run unit tests
         run: python -m pytest -q
 
+      - name: Restore newest deployed market data
+        run: python -m src.sync_deployed_data
+
       - name: Generate daily market data
+        if: github.event_name != 'push'
         run: python -m src.main
 
       - name: Validate generated JSON
@@ -60,7 +64,7 @@ jobs:
                   records = json.loads(path.read_text(encoding="utf-8"))
                   if not records:
                       raise SystemExit(f"{path}가 비어 있습니다.")
-          print(f"JSON 검증 완료: 신규 성공 {len(successful)}개")
+          print(f"JSON 검증 완료: 사용 가능 {len(successful)}개")
           PY
 
       - name: Configure GitHub Pages
