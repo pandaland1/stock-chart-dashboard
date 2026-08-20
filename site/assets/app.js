@@ -1410,6 +1410,9 @@
         : "QQQ와 차트 비교";
       this.refs.cursorSentimentField.hidden = !this.state.sentimentVisible;
       this.refs.sentimentLegendButton.hidden = !this.state.sentimentVisible;
+      if (this.state.data.length) {
+        this.renderCrosshairInfo(this.state.data[this.state.data.length - 1], true);
+      }
       this.resetPriceScale({ announce: false });
       this.selectPeriod(this.state.selectedPeriod, { updateButtons: true });
       this.renderFearMarkers();

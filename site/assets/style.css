@@ -1117,6 +1117,11 @@ select:disabled {
   backdrop-filter: blur(8px);
 }
 
+.latest-legend button[hidden],
+.crosshair-panel dl div[hidden] {
+  display: none !important;
+}
+
 .latest-legend button::after {
   content: "✎";
   color: var(--text-muted);
