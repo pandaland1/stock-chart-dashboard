@@ -1232,7 +1232,9 @@
         lineStyle: library.LineStyle.Dotted,
         lineVisible: true,
         axisLabelVisible: true,
-        title: this.state.symbol || "종가",
+        title: this.state.sentimentVisible
+          ? `${this.state.symbol || "QQQ"} USD`
+          : this.state.symbol || "종가",
       });
 
       if (this.state.sentimentVisible) {
@@ -1244,7 +1246,7 @@
             lineStyle: library.LineStyle.Dashed,
             lineVisible: true,
             axisLabelVisible: true,
-            title: String(value),
+            title: "",
           });
         });
       }
@@ -1656,6 +1658,7 @@
       const to = this.state.data[Math.min(this.state.data.length - 1, index + 60)].time;
       this.chart.timeScale().setVisibleRange({ from, to });
       this.chart.setCrosshairPosition(record.close, record.time, this.series.candles);
+      this.renderCrosshairInfo(record, false);
       this.refs.chart.focus({ preventScroll: true });
       this.refs.chart.scrollIntoView({ behavior: "smooth", block: "center" });
     }
