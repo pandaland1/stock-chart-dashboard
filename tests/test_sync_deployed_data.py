@@ -33,6 +33,29 @@ def read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def make_sentiment(latest_date: str, latest_value: float = 50.0) -> dict[str, Any]:
+    classification = "Neutral" if 45 <= latest_value <= 55 else "Fear"
+    return {
+        "schemaVersion": 1,
+        "firstAvailableDate": "2026-08-01",
+        "lastAvailableDate": latest_date,
+        "records": [
+            {"time": "2026-08-01", "value": 40.0, "classification": "Fear"},
+            {"time": latest_date, "value": latest_value, "classification": classification},
+        ],
+    }
+
+
+def sentiment_metadata(generated_at: str) -> dict[str, Any]:
+    return {
+        "generatedAt": generated_at,
+        "sentiment": {
+            "dataPath": "./data/sentiment/fear-greed.json",
+            "analyticsPath": "./data/sentiment/analytics.json",
+        },
+    }
+
+
 def test_restores_newer_fully_validated_deployed_dataset(tmp_path: Path) -> None:
     local_summary = [make_summary("PLTR", "2026-08-04")]
     deployed_summary = [make_summary("PLTR", "2026-08-05")]
@@ -156,3 +179,30 @@ def test_merges_newer_common_symbols_and_keeps_new_local_symbols(tmp_path: Path)
     ]
     assert read_json(tmp_path / "PLTR.json")[-1]["time"] == "2026-08-06"
     assert read_json(tmp_path / "GOOGL.json")[-1]["time"] == "2026-08-05"
+
+
+def test_restores_newer_sentiment_when_stock_dates_are_equal(tmp_path: Path) -> None:
+    summary = [make_summary("QQQ", "2026-08-05")]
+    write_json(tmp_path / "stocks.json", summary)
+    write_json(tmp_path / "QQQ.json", make_records("2026-08-05"))
+    write_json(tmp_path / "metadata.json", sentiment_metadata("local"))
+    write_json(tmp_path / "sentiment" / "fear-greed.json", make_sentiment("2026-08-04"))
+    write_json(tmp_path / "sentiment" / "analytics.json", {"commonPeriod": {"through": "2026-08-04"}})
+
+    deployed_metadata = sentiment_metadata("deployed")
+    responses = {
+        f"{BASE_URL}/stocks.json": summary,
+        f"{BASE_URL}/metadata.json": deployed_metadata,
+        f"{BASE_URL}/sentiment/fear-greed.json": make_sentiment("2026-08-05"),
+        f"{BASE_URL}/sentiment/analytics.json": {"commonPeriod": {"through": "2026-08-05"}},
+    }
+
+    restored = restore_latest_deployed_data(
+        tmp_path,
+        fetch_json=responses.__getitem__,
+        base_url=BASE_URL,
+    )
+
+    assert restored is True
+    assert read_json(tmp_path / "sentiment" / "fear-greed.json")["lastAvailableDate"] == "2026-08-05"
+    assert read_json(tmp_path / "metadata.json") == deployed_metadata

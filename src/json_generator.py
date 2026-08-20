@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -150,8 +152,25 @@ def build_empty_error_summary(stock: StockConfig, error_message: str) -> dict[st
 
 
 def write_json(path: Path, payload: Any) -> None:
-    """NaN을 거부하는 표준 JSON을 UTF-8로 기록한다."""
+    """검증된 JSON을 같은 디렉터리의 임시 파일을 거쳐 원자적으로 기록한다."""
 
     encoded = json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(encoded, encoding="utf-8")
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary:
+            temporary.write(encoded)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+            temporary_path = Path(temporary.name)
+        os.replace(temporary_path, path)
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()

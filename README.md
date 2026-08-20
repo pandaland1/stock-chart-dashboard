@@ -1,12 +1,18 @@
 # Market Lens — 미국 주식 멀티 타임프레임 차트
 
-별도 서버와 데이터베이스 없이 미국 주식의 일봉·주봉·월봉 OHLCV와 기술적 지표를 확인하는 개인용 정적 웹사이트입니다. Python이 일봉 데이터를 JSON으로 만들고, 브라우저가 TradingView Lightweight Charts™ 5.2로 멀티 타임프레임 차트를 렌더링합니다. GitHub Actions는 미국 증시 마감 뒤 데이터를 갱신해 GitHub Pages에 자동 배포합니다.
+별도 서버와 데이터베이스 없이 미국 주식의 일봉·주봉·월봉 OHLCV, 기술적 지표, QQQ × CNN Fear & Greed 장기 관계를 확인하는 개인용 정적 웹사이트입니다. Python이 시세·심리 데이터와 분석 결과를 JSON으로 만들고, 브라우저가 TradingView Lightweight Charts™ 5.2로 렌더링합니다. GitHub Actions는 미국 증시 마감 뒤 데이터를 증분 갱신해 GitHub Pages에 자동 배포합니다.
 
 > 이 프로젝트는 개인 학습 및 참고용입니다. 투자 판단을 위한 공식 금융 정보가 아니며 데이터의 정확성·완전성·실시간성을 보장하지 않습니다.
 
 ## 주요 기능
 
 - NVDA, AAPL, MSFT, PLTR, GOOGL, META, TSLA, QQQ 기본 지원(초기 종목은 PLTR)
+- QQQ 전체 일봉(1999-03-10부터)과 CNN Fear & Greed 실제 일별 관측값 비교
+- QQQ 왼쪽 USD축과 Fear & Greed 오른쪽 고정 0~100축, 경계값 25·45·55·75
+- 현재 Market Sentiment와 1D·5D·20D 변화, 급격한 5일 하락 감지
+- Extreme Fear `≤25`·`≤15`·`≤10` 에피소드와 이후 QQQ 5·20·60·120·250거래일 성과
+- Fear & Greed 수준↔QQQ 가격 및 심리 변화량↔QQQ 수익률 Pearson 상관관계
+- 심리 5거래일 ±15pt 급변 이후 QQQ 성과, 이벤트 마커, 전체 공통 데이터 CSV 내보내기
 - 일봉 원본과 주봉·월봉 OHLCV 집계
 - 현재 화면 범위의 거래량을 가격 구간별로 근사한 매물대와 POC·VAH·VAL
 - PLTR을 0% 기준으로 여러 종목을 추가·삭제하는 수익률 비교
@@ -16,13 +22,13 @@
 - 지표별 최신값을 오른쪽 가격축의 색상 라벨로 표시
 - 최신 종가의 수평 점선과 종목 코드 라벨
 - 십자선 날짜의 OHLCV·지표값과 이전 봉 종가 대비 등락률을 색상 정보 패널에서 확인
-- `1D`, `1W`, `1M` 봉 간격과 3개월·6개월·1년·2년·전체 화면 범위 전환
+- `1D`, `1W`, `1M` 봉 간격과 `1M`·`3M`·`6M`·`1Y`·`3Y`·`5Y`·`MAX` 화면 범위 전환
 - SMA120, SMA200, VWMA100, BB Upper/Basis/Lower를 각각 표시하거나 숨김
 - 차트 위 지표명을 선택해 해당 선의 색상과 1~4px 굵기를 바로 조절(브라우저에 설정 저장)
 - 차트 본문 드래그로 상하좌우 자유 이동, 마우스/터치 확대·축소
 - 오른쪽 가격축에서 휠 위로 세로 확대, 휠 아래로 세로 축소하거나 드래그로 배율 조절
 - 오른쪽 가격축 더블클릭으로 자동 범위 복원
-- `Shift`를 누른 동안 마우스 이동만으로 시작/종료 가격, 등락액, 등락률, 일봉 수 확인
+- `Shift`를 누른 동안 마우스 이동만으로 시작/종료 가격, 등락액, 등락률, 봉 수 확인. Sentiment 모드에서는 실제 QQQ 종가와 Fear & Greed 점수 차이도 동시 표시
 - `Shift`를 떼면 측정 박스 즉시 삭제
 - 자동 맞춤으로 수동 조절한 가격축 즉시 복원
 - 다크/라이트 테마 및 모바일 반응형 UI(범례 한 줄 스크롤, 터치 시 OHLC 표시)
@@ -31,17 +37,18 @@
 ## 동작 구조
 
 ```mermaid
-flowchart LR
-    A[config/stocks.json] --> B[Python + yfinance]
-    B --> C[지표 계산]
-    C --> D[site/data JSON]
-    D --> E[Vanilla JS 차트]
-    F[GitHub Actions] --> B
-    F --> G[GitHub Pages]
-    E --> G
+flowchart TD
+    A[GitHub Actions] --> B[기존 Pages 데이터 복원]
+    B --> C[Yahoo 시세 증분 수집]
+    B --> D[CNN 심리 증분 수집]
+    C --> E[지표·Sentiment 분석]
+    D --> E
+    E --> F[버전 JSON]
+    F --> G[Vanilla JS 차트]
+    F --> H[GitHub Pages]
 ```
 
-정적 페이지는 API 키나 브라우저의 외부 금융 API 호출 없이, 함께 배포된 JSON만 읽습니다. 예약 실행 때 GitHub Actions가 JSON을 새로 만들므로 별도 웹 서버가 필요하지 않습니다. 데이터 생성은 yfinance를 우선 사용하며, yfinance의 쿠키 경로가 일시적으로 요청 제한을 받는 경우 같은 Yahoo Chart 데이터를 직접 읽는 무키 보조 경로로 전환합니다.
+정적 페이지는 API 키나 브라우저의 외부 금융 API 호출 없이 함께 배포된 JSON만 읽습니다. 데이터 생성은 yfinance를 우선 사용하며 요청 제한 시 같은 Yahoo Chart 수정주가 데이터로 전환합니다. Fear & Greed는 CNN 지표만 사용하고 다른 방식으로 계산된 제3자 값을 섞지 않습니다. 갱신 실패 시 검증된 기존 파일을 유지합니다.
 
 ## 기술 스택
 
@@ -81,6 +88,8 @@ stock-chart-dashboard/
 │   ├── indicators.py
 │   ├── json_generator.py
 │   ├── main.py
+│   ├── sentiment_data.py
+│   ├── sentiment_analysis.py
 │   └── sync_deployed_data.py
 ├── site/
 │   ├── index.html
@@ -90,6 +99,9 @@ stock-chart-dashboard/
 │   │   ├── style.css
 │   │   └── vendor/
 │   └── data/
+│       └── sentiment/
+│           ├── fear-greed.json
+│           └── analytics.json
 ├── tests/
 ├── requirements.txt
 └── README.md
@@ -192,7 +204,21 @@ gh repo create stock-chart-dashboard --public --source=. --remote=origin --push
 - Actions 탭의 **Run workflow** 수동 실행
 - 미국 동부시간 기준 월~금 오후 4:20 (`20 16 * * 1-5`, `America/New_York`)
 
-미국 정규장 마감 20분 뒤에 실행됩니다. GitHub Actions의 시간대 설정이 서머타임을 자동 반영하므로 한국 시간으로는 서머타임 기간 화~토 오전 5:20, 표준시간 기간 화~토 오전 6:20입니다. 모든 실행은 먼저 현재 Pages 데이터와 저장소 데이터를 비교해 더 최신인 쪽을 작업 기준으로 삼습니다. `main` push는 외부 시세를 다시 조회하지 않고 그 기준 데이터로 UI만 배포하며, 예약·수동 실행은 이어서 신규 데이터를 수집합니다. yfinance가 기준 거래일보다 오래된 데이터를 반환하면 Yahoo Chart API로 다시 확인하고, 두 응답이 모두 과거이면 기존 데이터를 덮어쓰지 않은 채 배포를 중단합니다. 주말이나 미국 휴장일에는 마지막 거래일까지 유지됩니다.
+미국 정규장 마감 20분 뒤에 실행됩니다. GitHub Actions의 시간대 설정이 서머타임을 자동 반영하므로 한국 시간으로는 서머타임 기간 화~토 오전 5:20, 표준시간 기간 화~토 오전 6:20입니다. 모든 실행은 먼저 현재 Pages 데이터와 저장소 데이터를 비교해 더 최신인 쪽을 작업 기준으로 삼습니다. `main` push는 외부 데이터를 다시 조회하지 않고 UI만 배포하며, 예약·수동 실행은 이어서 신규 데이터를 수집합니다.
+
+QQQ는 최초에 전체 일봉을 수집하고 이후 기존 마지막 거래일 14일 전부터만 다시 조회해 겹침 구간을 병합합니다. Fear & Greed도 같은 14일 겹침 증분 방식입니다. 중복 제거·날짜 정렬·가격 양수·점수 0~100·미래 날짜 검증이 끝난 완성본만 원자적으로 교체합니다. 수동 실행의 `full_refresh`를 선택하면 QQQ 전체 이력 무결성 재수집을 수행합니다.
+
+브라우저는 먼저 `metadata.json`을 캐시 없이 확인한 뒤 `dataVersion`을 각 JSON URL에 붙입니다. 데이터가 바뀌지 않은 동안에는 브라우저 캐시를 활용하고 새 버전 배포 직후에는 이전 JSON을 재사용하지 않습니다.
+
+## Fear & Greed 분석 기준
+
+- CNN 공식 그래프 데이터가 일관되게 제공하는 최초 관측일은 `2020-07-14`입니다.
+- QQQ 최초 일봉은 `1999-03-10`이며 비교 통계는 두 값이 모두 있는 공통 거래일만 사용합니다.
+- 분류: `0~24 Extreme Fear`, `25~44 Fear`, `45~55 Neutral`, `56~74 Greed`, `75~100 Extreme Greed`
+- 에피소드: 임계값 이하가 연속된 구간을 한 번으로 묶고 구간 최저 점수일을 대표일로 사용합니다.
+- 사후 성과: 대표일 QQQ 수정종가 대비 정확히 N QQQ 거래일 뒤의 수익률입니다.
+- 급변: Fear & Greed의 5관측일 변화가 ±15pt를 넘은 연속 신호를 하나의 사건으로 묶습니다.
+- 상관관계: Pearson 계수이며 인과관계를 의미하지 않습니다.
 
 ## 차트 사용법
 
@@ -209,7 +235,10 @@ gh repo create stock-chart-dashboard --public --source=. --remote=origin --push
 - 등락률 측정: 차트 위에서 `Shift`를 누른 채 마우스를 움직임(클릭 불필요)
 - 측정 삭제: `Shift`를 떼는 즉시 자동 삭제
 - 특정 날짜: 십자선을 캔들 위로 이동
-- 화면 범위: `3개월`, `6개월`, `1년`, `2년`, `전체`
+- 화면 범위: `1M`, `3M`, `6M`, `1Y`, `3Y`, `5Y`, `MAX`
+- Fear & Greed: Market Sentiment의 `QQQ와 차트 비교` 또는 `지표 스타일`의 체크박스
+- Extreme Fear: 분석 카드의 `≤25`, `≤15`, `≤10` 선택. 이력 행을 누르면 해당 일자로 이동
+- CSV: 시장심리 분석 우측 상단의 `CSV 내보내기`
 - 지표 표시: `지표 스타일`에서 각 선의 체크박스 선택
 - 지표 스타일: 차트 왼쪽 위 지표명을 클릭한 뒤 강조된 행에서 색상과 굵기 선택
 - 테마: 오른쪽 위 해/달 버튼
@@ -226,9 +255,12 @@ gh repo create stock-chart-dashboard --public --source=. --remote=origin --push
 
 각 종목은 최대 3회 재시도합니다. 일부 종목만 실패하면 성공 종목은 계속 생성하고, 기존 종목 JSON이 있으면 그 파일을 보존한 채 `updateStatus: "error"`로 표시합니다. 모든 종목이 실패하면 프로그램이 종료 코드 1로 끝나 Pages 배포가 진행되지 않습니다.
 
+CNN 요청이 실패하면 기존 `fear-greed.json`과 분석 파일을 유지하고 메타데이터에 실패 상태와 마지막 성공 시각을 남깁니다. 서로 계산 방식이 다른 대체 심리지표로 자동 전환하지 않습니다.
+
 ## 데이터 및 라이선스 주의사항
 
 - yfinance는 Yahoo Finance의 비공식 오픈소스 클라이언트입니다. 제공 데이터의 이용 조건을 확인하고 개인 연구·학습 범위에서 사용하세요.
+- Fear & Greed는 CNN의 공개 시장심리 그래프 데이터를 사용하며 CNN의 이용 조건과 제공 범위를 따릅니다.
 - 시세는 지연되거나 정정될 수 있으며 거래소의 공식 데이터가 아닙니다.
 - Lightweight Charts™는 TradingView가 개발한 Apache 2.0 오픈소스 라이브러리입니다.
 - 이 프로젝트는 TradingView의 공식 서비스나 제휴 제품이 아닙니다.

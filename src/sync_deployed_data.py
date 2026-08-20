@@ -15,6 +15,7 @@ from urllib.request import Request, urlopen
 
 from .config import SITE_DATA_DIR
 from .json_generator import write_json
+from .sentiment_data import SentimentDataError, validate_sentiment_records
 
 
 LOGGER = logging.getLogger(__name__)
@@ -125,6 +126,35 @@ def _validate_records(payload: Any, symbol: str, expected_date: date) -> list[di
     return payload
 
 
+def _validate_sentiment_payload(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise DeployedDataError("배포 fear-greed.json은 객체여야 합니다.")
+    try:
+        records = validate_sentiment_records(payload.get("records"))
+    except SentimentDataError as exc:
+        raise DeployedDataError(f"배포 Fear & Greed 데이터가 올바르지 않습니다: {exc}") from exc
+    if payload.get("firstAvailableDate") != records[0]["time"]:
+        raise DeployedDataError("배포 Fear & Greed 최초 날짜가 records와 일치하지 않습니다.")
+    if payload.get("lastAvailableDate") != records[-1]["time"]:
+        raise DeployedDataError("배포 Fear & Greed 최신 날짜가 records와 일치하지 않습니다.")
+    return {**payload, "records": records}
+
+
+def _sentiment_paths(metadata: Any) -> tuple[str, str] | None:
+    if not isinstance(metadata, dict):
+        return None
+    sentiment = metadata.get("sentiment")
+    if not isinstance(sentiment, dict):
+        return None
+    data_path = sentiment.get("dataPath")
+    analytics_path = sentiment.get("analyticsPath")
+    if data_path != "./data/sentiment/fear-greed.json":
+        return None
+    if analytics_path != "./data/sentiment/analytics.json":
+        return None
+    return "sentiment/fear-greed.json", "sentiment/analytics.json"
+
+
 def restore_latest_deployed_data(
     data_dir: Path = SITE_DATA_DIR,
     *,
@@ -180,10 +210,6 @@ def restore_latest_deployed_data(
             ", ".join(older_symbols),
         )
         return False
-    if not newer_symbols:
-        LOGGER.info("로컬과 배포 데이터의 최신 거래일이 같아 로컬 데이터를 유지합니다.")
-        return False
-
     deployed_summary_by_symbol = {
         summary["symbol"]: summary for summary in deployed_summaries
     }
@@ -199,20 +225,57 @@ def restore_latest_deployed_data(
     if not isinstance(deployed_metadata, dict):
         raise DeployedDataError("배포 metadata.json은 객체여야 합니다.")
 
+    sentiment_to_restore: dict[str, Any] | None = None
+    analytics_to_restore: dict[str, Any] | None = None
+    deployed_sentiment_paths = _sentiment_paths(deployed_metadata)
+    local_metadata = _load_json(data_dir / "metadata.json")
+    local_sentiment_paths = _sentiment_paths(local_metadata)
+    if deployed_sentiment_paths:
+        sentiment_relative, analytics_relative = deployed_sentiment_paths
+        deployed_sentiment = _validate_sentiment_payload(
+            fetch_json(f"{base_url}/{sentiment_relative}")
+        )
+        local_latest: str | None = None
+        if local_sentiment_paths:
+            try:
+                local_sentiment = _validate_sentiment_payload(
+                    _load_json(data_dir / local_sentiment_paths[0])
+                )
+                local_latest = local_sentiment["lastAvailableDate"]
+            except DeployedDataError:
+                LOGGER.warning("로컬 Fear & Greed 파일이 유효하지 않아 배포본으로 복구합니다.")
+        if local_latest is None or deployed_sentiment["lastAvailableDate"] > local_latest:
+            analytics_payload = fetch_json(f"{base_url}/{analytics_relative}")
+            if not isinstance(analytics_payload, dict) or not isinstance(
+                analytics_payload.get("commonPeriod"), dict
+            ):
+                raise DeployedDataError("배포 Sentiment 분석 파일이 올바르지 않습니다.")
+            sentiment_to_restore = deployed_sentiment
+            analytics_to_restore = analytics_payload
+
+    if not newer_symbols and sentiment_to_restore is None:
+        LOGGER.info("로컬과 배포 데이터의 최신 거래일 및 심리 데이터가 같아 로컬 데이터를 유지합니다.")
+        return False
+
     for symbol, records in deployed_records.items():
         write_json(data_dir / f"{symbol}.json", records)
-    merged_summaries = [
-        deployed_summary_by_symbol.get(summary["symbol"], summary)
-        if summary["symbol"] in newer_symbols
-        else summary
-        for summary in local_summaries
-    ]
-    write_json(data_dir / "stocks.json", merged_summaries)
+    if newer_symbols:
+        merged_summaries = [
+            deployed_summary_by_symbol.get(summary["symbol"], summary)
+            if summary["symbol"] in newer_symbols
+            else summary
+            for summary in local_summaries
+        ]
+        write_json(data_dir / "stocks.json", merged_summaries)
+    if sentiment_to_restore is not None and analytics_to_restore is not None:
+        write_json(data_dir / "sentiment" / "fear-greed.json", sentiment_to_restore)
+        write_json(data_dir / "sentiment" / "analytics.json", analytics_to_restore)
     write_json(data_dir / "metadata.json", deployed_metadata)
 
     LOGGER.info(
-        "현재 Pages의 더 최신인 시장 데이터를 복원했습니다: %s",
-        ", ".join(newer_symbols),
+        "현재 Pages의 더 최신인 데이터를 복원했습니다: 종목=%s, 심리=%s",
+        ", ".join(newer_symbols) or "없음",
+        "복원" if sentiment_to_restore is not None else "유지",
     )
     return True
 

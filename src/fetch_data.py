@@ -7,6 +7,7 @@ import logging
 import tempfile
 import time
 from collections.abc import Callable
+from datetime import timedelta
 from functools import lru_cache
 from pathlib import Path
 from urllib.parse import quote, urlencode
@@ -107,6 +108,48 @@ def _download(symbol: str) -> pd.DataFrame:
     return frame
 
 
+def _download_history(
+    symbol: str,
+    *,
+    period: str = "max",
+    start: str | None = None,
+) -> pd.DataFrame:
+    """QQQ 전체 이력 또는 마지막 거래일 이후의 겹침 구간을 내려받는다."""
+
+    _configure_yfinance_cache()
+    options = {
+        "tickers": symbol,
+        "interval": "1d",
+        "auto_adjust": True,
+        "actions": False,
+        "progress": False,
+        "threads": False,
+        "timeout": 45,
+        "multi_level_index": True,
+    }
+    if start:
+        options["start"] = start
+    else:
+        options["period"] = period
+
+    try:
+        frame = yf.download(**options)
+    except TypeError as exc:
+        if "multi_level_index" not in str(exc):
+            LOGGER.warning("[%s] 전체 이력 yfinance 오류, Chart API로 전환: %s", symbol, exc)
+            return _download_chart_api_history(symbol, period=period, start=start)
+        legacy_options = options.copy()
+        legacy_options.pop("multi_level_index")
+        frame = yf.download(**legacy_options)
+    except Exception as exc:
+        LOGGER.warning("[%s] 전체 이력 yfinance 오류, Chart API로 전환: %s", symbol, exc)
+        return _download_chart_api_history(symbol, period=period, start=start)
+
+    if frame is None or frame.empty:
+        return _download_chart_api_history(symbol, period=period, start=start)
+    return frame
+
+
 def _download_chart_api(symbol: str) -> pd.DataFrame:
     """yfinance 요청 제한 시 Yahoo Chart 응답을 같은 수정주가 기준으로 변환한다."""
 
@@ -129,6 +172,85 @@ def _download_chart_api(symbol: str) -> pd.DataFrame:
     with urlopen(request, timeout=30) as response:  # noqa: S310 - 고정 HTTPS 호스트만 사용한다.
         payload = json.load(response)
     return chart_payload_to_frame(payload, symbol)
+
+
+def _download_chart_api_history(
+    symbol: str,
+    *,
+    period: str = "max",
+    start: str | None = None,
+) -> pd.DataFrame:
+    """Yahoo Chart API에서 전체 또는 시작일 이후 수정주가 이력을 받는다."""
+
+    parameters: dict[str, str] = {
+        "interval": "1d",
+        "events": "div,splits",
+        "includeAdjustedClose": "true",
+    }
+    if start:
+        parameters["period1"] = str(int(pd.Timestamp(start, tz="UTC").timestamp()))
+        parameters["period2"] = str(int((pd.Timestamp.now(tz="UTC") + pd.Timedelta(days=1)).timestamp()))
+    else:
+        # range=max는 Yahoo가 오래된 구간을 월봉으로 자동 축약할 수 있다.
+        # 명시적 epoch 범위를 사용해야 1999년부터 현재까지 일봉이 유지된다.
+        parameters["period1"] = "0"
+        parameters["period2"] = str(int((pd.Timestamp.now(tz="UTC") + pd.Timedelta(days=1)).timestamp()))
+
+    url = (
+        f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(symbol)}?"
+        f"{urlencode(parameters)}"
+    )
+    request = Request(
+        url,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (compatible; MarketLens/2.0; personal-study)",
+        },
+    )
+    with urlopen(request, timeout=45) as response:  # noqa: S310 - 고정 HTTPS 호스트
+        payload = json.load(response)
+    return chart_payload_to_frame(payload, symbol)
+
+
+def fetch_stock_history(
+    stock: StockConfig,
+    *,
+    existing_latest_date: str | None = None,
+    force_full: bool = False,
+    overlap_days: int = 14,
+    max_attempts: int = 3,
+    retry_delay_seconds: float = 5.0,
+) -> pd.DataFrame:
+    """전체 이력을 최초 수집하고 이후에는 겹침 구간만 증분 조회한다."""
+
+    if overlap_days < 1:
+        raise ValueError("overlap_days는 1 이상이어야 합니다.")
+
+    start: str | None = None
+    if existing_latest_date and not force_full:
+        start_timestamp = pd.Timestamp(existing_latest_date) - timedelta(days=overlap_days)
+        start = start_timestamp.strftime("%Y-%m-%d")
+
+    frame = fetch_stock_data(
+        stock,
+        max_attempts=max_attempts,
+        retry_delay_seconds=retry_delay_seconds,
+        downloader=lambda symbol: _download_history(symbol, period="max", start=start),
+        stale_fallback_downloader=lambda symbol: _download_chart_api_history(
+            symbol,
+            period="max",
+            start=start,
+        ),
+        minimum_latest_date=existing_latest_date,
+    )
+    if force_full:
+        span_days = max(1, (frame.index.max() - frame.index.min()).days)
+        if span_days / len(frame) > 7:
+            raise StockDataError(
+                f"{stock.symbol}: 전체 이력이 일봉 밀도를 충족하지 않습니다 "
+                f"({len(frame)}건/{span_days}일)."
+            )
+    return frame
 
 
 def chart_payload_to_frame(payload: dict, symbol: str) -> pd.DataFrame:

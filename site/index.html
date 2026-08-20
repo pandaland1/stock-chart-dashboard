@@ -5,14 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta
       name="description"
-      content="미국 주식 일봉·주봉·월봉과 매물대, 종목 비교, SMA120, SMA200, VWMA100, 볼린저 밴드를 확인하는 개인용 차트"
+      content="미국 주식 차트와 QQQ × CNN Fear & Greed 장기 비교·시장심리 분석"
     />
     <meta name="color-scheme" content="dark light" />
     <title>Market Lens · 미국 주식 차트</title>
-    <link rel="stylesheet" href="./assets/style.css?v=9" />
+    <link rel="stylesheet" href="./assets/style.css?v=10" />
     <script defer src="./assets/vendor/lightweight-charts.standalone.production.js"></script>
-    <script defer src="./assets/chart-utils.js?v=1"></script>
-    <script defer src="./assets/app.js?v=9"></script>
+    <script defer src="./assets/chart-utils.js?v=2"></script>
+    <script defer src="./assets/app.js?v=10"></script>
   </head>
   <body>
     <a class="skip-link" href="#stock-chart">차트로 바로가기</a>
@@ -72,11 +72,13 @@
             <div class="range-picker">
               <span class="control-label">화면 범위</span>
               <div class="segmented-control" role="group" aria-label="화면에 표시할 기간">
-                <button type="button" data-period="3M">3개월</button>
-                <button type="button" data-period="6M">6개월</button>
-                <button type="button" data-period="1Y" class="is-active" aria-pressed="true">1년</button>
-                <button type="button" data-period="2Y">2년</button>
-                <button type="button" data-period="ALL">전체</button>
+                <button type="button" data-period="1M">1M</button>
+                <button type="button" data-period="3M">3M</button>
+                <button type="button" data-period="6M">6M</button>
+                <button type="button" data-period="1Y" class="is-active" aria-pressed="true">1Y</button>
+                <button type="button" data-period="3Y">3Y</button>
+                <button type="button" data-period="5Y">5Y</button>
+                <button type="button" data-period="MAX">MAX</button>
               </div>
             </div>
           </div>
@@ -161,6 +163,20 @@
           </header>
 
           <div class="indicator-setting-list">
+            <div class="indicator-setting-row sentiment-setting-row" data-sentiment-row>
+              <label class="indicator-visibility">
+                <input type="checkbox" data-sentiment-visible />
+                <span>Fear &amp; Greed</span>
+              </label>
+              <label class="colour-control">색상 <input type="color" data-sentiment-color value="#f0b429" /></label>
+              <label class="width-control">굵기
+                <select data-sentiment-width aria-label="Fear & Greed 선 굵기">
+                  <option value="1">1px</option><option value="2" selected>2px</option><option value="3">3px</option><option value="4">4px</option>
+                </select>
+              </label>
+              <span class="setting-note">QQQ 전용 · 오른쪽 0~100축</span>
+            </div>
+
             <div class="indicator-setting-row volume-setting-row">
               <label class="indicator-visibility">
                 <input type="checkbox" data-volume-visible checked />
@@ -255,6 +271,30 @@
         </aside>
       </section>
 
+      <section id="sentiment-overview" class="sentiment-overview" aria-labelledby="sentiment-overview-title" hidden>
+        <div class="sentiment-score-card">
+          <div>
+            <p class="eyebrow">MARKET SENTIMENT</p>
+            <h2 id="sentiment-overview-title">Fear &amp; Greed</h2>
+            <p id="sentiment-as-of" class="sentiment-as-of">최근 관측값 확인 중</p>
+          </div>
+          <div class="sentiment-gauge" aria-label="Fear & Greed 현재 점수">
+            <strong id="sentiment-current">—</strong>
+            <span id="sentiment-classification">—</span>
+          </div>
+          <dl class="sentiment-changes">
+            <div><dt>1D</dt><dd id="sentiment-change-1d">—</dd></div>
+            <div><dt>5D</dt><dd id="sentiment-change-5d">—</dd></div>
+            <div><dt>20D</dt><dd id="sentiment-change-20d">—</dd></div>
+            <div><dt>Previous Close</dt><dd id="sentiment-previous">—</dd></div>
+          </dl>
+          <button id="sentiment-chart-toggle" class="sentiment-chart-toggle" type="button" aria-pressed="false">
+            QQQ와 차트 비교
+          </button>
+        </div>
+        <p id="sentiment-alert" class="sentiment-alert" hidden></p>
+      </section>
+
       <section class="chart-shell" aria-label="주가 차트 영역">
         <div class="chart-hud">
           <div
@@ -262,6 +302,19 @@
             class="latest-legend"
             aria-label="최신 지표값. 지표를 선택하면 스타일 설정이 열립니다."
           >
+            <button
+              type="button"
+              id="sentiment-legend-button"
+              class="sentiment-legend-button"
+              aria-controls="indicator-settings"
+              aria-expanded="false"
+              aria-label="Fear & Greed 색상과 굵기 설정 열기"
+              title="Fear & Greed 색상·굵기 설정"
+              hidden
+            >
+              <span class="legend-name sentiment">F&amp;G</span>
+              <span id="legend-sentiment">—</span>
+            </button>
             <button
               type="button"
               data-legend-toggle="sma120"
@@ -341,6 +394,7 @@
               <div class="cursor-field cursor-close"><dt>종</dt><dd id="cursor-close">—</dd></div>
               <div class="cursor-field cursor-change"><dt>등락률</dt><dd id="cursor-change-rate">—</dd></div>
               <div class="cursor-field cursor-volume"><dt>거래량</dt><dd id="cursor-volume">—</dd></div>
+              <div id="cursor-sentiment-field" class="cursor-field cursor-sentiment" hidden><dt>Fear &amp; Greed</dt><dd id="cursor-sentiment">—</dd></div>
               <div class="cursor-field cursor-sma120"><dt>SMA120</dt><dd id="cursor-sma120">—</dd></div>
               <div class="cursor-field cursor-sma200"><dt>SMA200</dt><dd id="cursor-sma200">—</dd></div>
               <div class="cursor-field cursor-vwma100"><dt>VWMA</dt><dd id="cursor-vwma100">—</dd></div>
@@ -368,6 +422,7 @@
             <strong id="measurement-change">—</strong>
             <span id="measurement-prices">—</span>
             <span id="measurement-dates">—</span>
+            <span id="measurement-sentiment" hidden>—</span>
           </div>
         </div>
 
@@ -385,12 +440,62 @@
           <button id="retry-button" type="button" hidden>다시 시도</button>
         </div>
       </section>
+
+      <section id="sentiment-analysis" class="sentiment-analysis" aria-labelledby="sentiment-analysis-title" hidden>
+        <header class="analysis-header">
+          <div>
+            <p class="eyebrow">QQQ × FEAR &amp; GREED</p>
+            <h2 id="sentiment-analysis-title">시장심리 과거 분석</h2>
+            <p id="analysis-period">공통 관측 기간 확인 중</p>
+          </div>
+          <button id="sentiment-csv-export" type="button">CSV 내보내기</button>
+        </header>
+
+        <div class="analysis-grid">
+          <article class="analysis-card extreme-card">
+            <header>
+              <div><h3>Extreme Fear 이후 QQQ</h3><p>연속 구간은 최저 점수일 기준 1회로 집계</p></div>
+              <div class="threshold-tabs" role="group" aria-label="Fear & Greed 임계값">
+                <button type="button" data-fear-threshold="25" class="is-active" aria-pressed="true">≤25</button>
+                <button type="button" data-fear-threshold="15" aria-pressed="false">≤15</button>
+                <button type="button" data-fear-threshold="10" aria-pressed="false">≤10</button>
+              </div>
+            </header>
+            <p class="occurrence-count">발생 횟수 <strong id="fear-occurrences">—</strong></p>
+            <dl id="fear-forward-returns" class="return-metrics"></dl>
+          </article>
+
+          <article class="analysis-card correlation-card">
+            <header><div><h3>Sentiment Correlation</h3><p>점수 수준 / 일별 변화량과 QQQ 수익률</p></div></header>
+            <div id="correlation-table" class="correlation-table"></div>
+            <p class="analysis-note">Pearson 상관계수이며, 상관관계는 인과관계를 의미하지 않습니다.</p>
+          </article>
+
+          <article class="analysis-card shock-card">
+            <header><div><h3>심리 급변 이후 성과</h3><p>5거래일 동안 15pt 이상 변한 중복 구간을 1회로 집계</p></div></header>
+            <div id="sentiment-shock-summary"></div>
+          </article>
+        </div>
+
+        <article class="analysis-card history-card">
+          <header>
+            <div><h3>Extreme Fear History</h3><p>행을 선택하면 해당 날짜로 차트가 이동합니다.</p></div>
+            <label class="marker-toggle"><input id="fear-marker-toggle" type="checkbox" checked /> 차트 마커</label>
+          </header>
+          <div class="history-table-wrap">
+            <table>
+              <thead><tr><th>Date</th><th>F&amp;G</th><th>QQQ</th><th>20D</th><th>60D</th><th>120D</th></tr></thead>
+              <tbody id="fear-history-body"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
     </main>
 
     <footer>
       <div>
         <strong>데이터 기준</strong>
-        <span>Yahoo Finance · 수정주가 · 일봉 원본을 주봉·월봉으로 집계</span>
+        <span>Yahoo Finance 수정주가 · CNN Fear &amp; Greed 실제 일별 관측값</span>
       </div>
       <div>
         <strong>마지막 거래일</strong>

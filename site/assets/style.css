@@ -22,6 +22,7 @@
   --bb-upper: #c43ee8;
   --bb-basis: #9b5de5;
   --bb-lower: #7048d7;
+  --sentiment: #f0b429;
   --shadow: 0 18px 45px rgba(0, 0, 0, 0.22);
   font-family:
     Inter, Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -675,6 +676,11 @@ select:disabled {
   grid-template-columns: minmax(120px, 1fr) auto;
 }
 
+.sentiment-setting-row .setting-note {
+  grid-column: 1 / -1;
+  padding-left: 25px;
+}
+
 .indicator-visibility,
 .colour-control,
 .width-control {
@@ -736,6 +742,145 @@ select:disabled {
 .legend-name.bb-upper { color: var(--bb-upper); }
 .legend-name.bb-basis { color: var(--bb-basis); }
 .legend-name.bb-lower { color: var(--bb-lower); }
+.legend-name.sentiment { color: var(--sentiment); }
+
+.sentiment-overview {
+  padding: 12px clamp(14px, 2.6vw, 40px);
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--page-bg);
+}
+
+.sentiment-overview[hidden],
+.sentiment-analysis[hidden] {
+  display: none;
+}
+
+.sentiment-score-card {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto minmax(320px, 1.3fr) auto;
+  align-items: center;
+  gap: 14px 24px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background:
+    linear-gradient(110deg, color-mix(in srgb, var(--sentiment), transparent 93%), transparent 40%),
+    var(--surface);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.08);
+}
+
+.eyebrow,
+.sentiment-score-card h2,
+.sentiment-as-of,
+.analysis-header h2,
+.analysis-header p,
+.analysis-card h3,
+.analysis-card header p,
+.occurrence-count,
+.analysis-note {
+  margin: 0;
+}
+
+.eyebrow {
+  color: var(--sentiment);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+}
+
+.sentiment-score-card h2,
+.analysis-header h2 {
+  margin-top: 2px;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+
+.sentiment-as-of,
+.analysis-header p,
+.analysis-card header p,
+.analysis-note {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.sentiment-gauge {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 132px;
+}
+
+.sentiment-gauge strong {
+  color: var(--sentiment);
+  font-size: 36px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.sentiment-gauge span {
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.sentiment-changes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(64px, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+
+.sentiment-changes div {
+  padding: 7px 9px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.sentiment-changes dt {
+  color: var(--text-muted);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.sentiment-changes dd {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.sentiment-chart-toggle,
+#sentiment-csv-export,
+.threshold-tabs button {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.sentiment-chart-toggle[aria-pressed="true"],
+.threshold-tabs button.is-active {
+  border-color: color-mix(in srgb, var(--sentiment), transparent 32%);
+  background: color-mix(in srgb, var(--sentiment), transparent 87%);
+  color: var(--text);
+}
+
+.sentiment-alert {
+  margin: 8px 2px 0;
+  color: var(--negative);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.sentiment-alert[hidden] { display: none; }
 
 .chart-shell {
   position: relative;
@@ -745,6 +890,10 @@ select:disabled {
   overflow: hidden;
   background: var(--chart-bg);
   box-shadow: var(--shadow);
+}
+
+.chart-shell.has-sentiment .chart-hud {
+  left: calc(var(--left-price-scale-width, 108px) + 8px);
 }
 
 .stock-chart {
@@ -1082,6 +1231,7 @@ select:disabled {
 .cursor-low { color: var(--negative) !important; }
 .cursor-close { color: var(--cursor-close) !important; }
 .cursor-volume { color: var(--cursor-volume) !important; }
+.cursor-sentiment { color: var(--sentiment) !important; }
 .cursor-sma120 { color: var(--sma120) !important; }
 .cursor-sma200 { color: var(--sma200) !important; }
 .cursor-vwma100 { color: var(--vwma100) !important; }
@@ -1092,6 +1242,184 @@ select:disabled {
 .cursor-change dd.is-positive { color: var(--positive); }
 .cursor-change dd.is-negative { color: var(--negative); }
 .cursor-change dd.is-flat { color: var(--cursor-close); }
+.is-positive { color: var(--positive) !important; }
+.is-negative { color: var(--negative) !important; }
+.is-flat { color: var(--text-secondary); }
+
+.sentiment-analysis {
+  padding: 24px clamp(14px, 2.6vw, 40px) 10px;
+  background: var(--page-bg);
+}
+
+.analysis-header,
+.analysis-card > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.analysis-grid {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr 1fr;
+  gap: 12px;
+  margin-top: 13px;
+}
+
+.analysis-card {
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.07);
+}
+
+.analysis-card h3 {
+  font-size: 14px;
+}
+
+.threshold-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.threshold-tabs button {
+  min-height: 32px;
+  padding-inline: 9px;
+}
+
+.occurrence-count {
+  margin-top: 14px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.occurrence-count strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.return-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 5px;
+  margin: 9px 0 0;
+}
+
+.return-metrics div {
+  padding: 8px 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  background: var(--surface-raised);
+  text-align: center;
+}
+
+.return-metrics dt {
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.return-metrics dd {
+  margin: 3px 0 0;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.correlation-table {
+  margin-top: 11px;
+}
+
+.correlation-table table,
+.history-card table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.correlation-table th,
+.correlation-table td,
+.history-card th,
+.history-card td {
+  padding: 6px 7px;
+  border-bottom: 1px solid var(--border-soft);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.correlation-table th:first-child,
+.correlation-table td:first-child,
+.history-card th:first-child,
+.history-card td:first-child {
+  text-align: left;
+}
+
+.correlation-table th,
+.history-card th {
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.shock-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 10px;
+  padding: 9px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.shock-row.drop strong { color: var(--negative); }
+.shock-row.rise strong { color: var(--positive); }
+
+.history-card {
+  margin-top: 12px;
+}
+
+.history-table-wrap {
+  max-height: 360px;
+  margin-top: 11px;
+  overflow: auto;
+}
+
+.history-card thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+}
+
+.history-card tbody tr {
+  cursor: pointer;
+}
+
+.history-card tbody tr:hover,
+.history-card tbody tr:focus-visible {
+  outline: none;
+  background: var(--surface-hover);
+}
+
+.marker-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.marker-toggle input {
+  accent-color: var(--sentiment);
+}
 
 .chart-status {
   position: absolute;
@@ -1190,6 +1518,29 @@ footer a {
     grid-column: 1 / -1;
     justify-self: start;
     justify-content: flex-start;
+  }
+
+  .sentiment-score-card {
+    grid-template-columns: minmax(180px, 1fr) auto;
+  }
+
+  .sentiment-changes {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .sentiment-chart-toggle {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: stretch;
+  }
+
+  .analysis-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .extreme-card {
+    grid-column: 1 / -1;
   }
 }
 
@@ -1290,7 +1641,7 @@ footer a {
 
   .segmented-control {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(7, minmax(0, 1fr));
     flex: 1;
   }
 
@@ -1301,7 +1652,7 @@ footer a {
   .segmented-control button {
     min-width: 0;
     padding: 0 4px;
-    font-size: 11px;
+    font-size: 10px;
   }
 
   .chart-actions {
@@ -1358,6 +1709,84 @@ footer a {
     padding-inline: 4px;
   }
 
+  .sentiment-overview,
+  .sentiment-analysis {
+    padding-inline:
+      max(10px, env(safe-area-inset-left, 0px))
+      max(10px, env(safe-area-inset-right, 0px));
+  }
+
+  .sentiment-score-card {
+    grid-template-columns: 1fr auto;
+    gap: 10px 12px;
+    padding: 12px;
+  }
+
+  .sentiment-gauge {
+    min-width: 104px;
+    justify-content: flex-end;
+  }
+
+  .sentiment-gauge strong {
+    font-size: 31px;
+  }
+
+  .sentiment-gauge span {
+    font-size: 11px;
+  }
+
+  .sentiment-changes {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .sentiment-changes div {
+    min-width: 0;
+    padding-inline: 6px;
+  }
+
+  .sentiment-changes dt,
+  .sentiment-changes dd {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .sentiment-chart-toggle {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    width: 100%;
+  }
+
+  .analysis-header {
+    align-items: flex-end;
+  }
+
+  .analysis-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .extreme-card {
+    grid-column: auto;
+  }
+
+  .analysis-card > header {
+    align-items: flex-start;
+  }
+
+  .return-metrics {
+    grid-template-columns: repeat(5, minmax(58px, 1fr));
+    overflow-x: auto;
+  }
+
+  .history-card {
+    padding: 12px 10px;
+  }
+
+  .history-table-wrap {
+    max-height: 420px;
+  }
+
   .chart-shell {
     height: clamp(560px, 72svh, 720px);
     min-height: 560px;
@@ -1380,6 +1809,10 @@ footer a {
     left: 7px;
     gap: 5px;
     max-width: none;
+  }
+
+  .chart-shell.has-sentiment .chart-hud {
+    left: calc(var(--left-price-scale-width, 72px) + 5px);
   }
 
   .latest-legend,

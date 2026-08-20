@@ -5,6 +5,12 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      full_refresh:
+        description: "QQQ 전체 이력 무결성 재수집"
+        required: false
+        type: boolean
+        default: false
   schedule:
     - cron: "20 16 * * 1-5"
       timezone: "America/New_York"
@@ -48,6 +54,8 @@ jobs:
 
       - name: Generate daily market data
         if: github.event_name != 'push'
+        env:
+          MARKET_LENS_FULL_REFRESH: ${{ inputs.full_refresh == true && '1' || '0' }}
         run: python -m src.main
 
       - name: Validate generated JSON
@@ -67,7 +75,29 @@ jobs:
                   records = json.loads(path.read_text(encoding="utf-8"))
                   if not records:
                       raise SystemExit(f"{path}가 비어 있습니다.")
-          print(f"JSON 검증 완료: 사용 가능 {len(successful)}개")
+                  dates = [record["time"] for record in records]
+                  if dates != sorted(set(dates)):
+                      raise SystemExit(f"{path} 날짜가 오름차순 고유값이 아닙니다.")
+                  if any(float(record["close"]) <= 0 for record in records):
+                      raise SystemExit(f"{path}에 0 이하 종가가 있습니다.")
+
+          metadata = json.loads((data_dir / "metadata.json").read_text(encoding="utf-8"))
+          sentiment_path = data_dir / "sentiment" / "fear-greed.json"
+          analytics_path = data_dir / "sentiment" / "analytics.json"
+          sentiment = json.loads(sentiment_path.read_text(encoding="utf-8"))
+          analytics = json.loads(analytics_path.read_text(encoding="utf-8"))
+          sentiment_records = sentiment["records"]
+          sentiment_dates = [record["time"] for record in sentiment_records]
+          if sentiment_dates != sorted(set(sentiment_dates)):
+              raise SystemExit("Fear & Greed 날짜가 오름차순 고유값이 아닙니다.")
+          if any(not 0 <= float(record["value"]) <= 100 for record in sentiment_records):
+              raise SystemExit("Fear & Greed 값이 0~100 범위를 벗어났습니다.")
+          if not metadata.get("dataVersion") or not analytics.get("commonPeriod"):
+              raise SystemExit("데이터 버전 또는 Sentiment 공통 기간이 없습니다.")
+          print(
+              f"JSON 검증 완료: 종목 {len(successful)}개, "
+              f"Fear & Greed {len(sentiment_records)}건"
+          )
           PY
 
       - name: Configure GitHub Pages

@@ -161,5 +161,108 @@
     }));
   }
 
-  return Object.freeze({ aggregateRecords, buildVolumeProfile, normaliseRecords });
+  function aggregateSentimentRecords(sentimentRecords, priceRecords, interval = "1D") {
+    if (!INTERVALS.has(interval)) throw new Error(`지원하지 않는 봉 간격입니다: ${interval}`);
+    const sentiment = Array.isArray(sentimentRecords)
+      ? sentimentRecords.filter(
+          (record) =>
+            typeof record?.time === "string" &&
+            Number.isFinite(record.value) &&
+            record.value >= 0 &&
+            record.value <= 100
+        )
+      : [];
+    const prices = Array.isArray(priceRecords) ? priceRecords : [];
+    if (!sentiment.length || !prices.length) return [];
+
+    const byBucket = new Map();
+    sentiment.forEach((record) => {
+      byBucket.set(intervalKey(record.time, interval), record);
+    });
+    return prices.flatMap((priceRecord) => {
+      const match = byBucket.get(intervalKey(priceRecord.time, interval));
+      return match
+        ? [{ ...match, sourceTime: match.time, time: priceRecord.time }]
+        : [];
+    });
+  }
+
+  function lowerBoundByTime(records, targetTime) {
+    let low = 0;
+    let high = Array.isArray(records) ? records.length : 0;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if (records[middle].time < targetTime) low = middle + 1;
+      else high = middle;
+    }
+    return low;
+  }
+
+  function buildRangeComparison(priceRecords, sentimentByDate, startIndex, endIndex) {
+    if (!Array.isArray(priceRecords) || !priceRecords.length) return null;
+    const firstIndex = Math.max(0, Math.min(startIndex, endIndex, priceRecords.length - 1));
+    const lastIndex = Math.max(0, Math.min(Math.max(startIndex, endIndex), priceRecords.length - 1));
+    const start = priceRecords[firstIndex];
+    const end = priceRecords[lastIndex];
+    const priceReturn = Number(start?.close)
+      ? ((Number(end?.close) / Number(start.close)) - 1) * 100
+      : null;
+    const startSentiment = sentimentByDate?.get?.(start?.time);
+    const endSentiment = sentimentByDate?.get?.(end?.time);
+    const sentimentChange = Number.isFinite(startSentiment?.value) && Number.isFinite(endSentiment?.value)
+      ? endSentiment.value - startSentiment.value
+      : null;
+    return {
+      startDate: start?.time,
+      endDate: end?.time,
+      startPrice: start?.close,
+      endPrice: end?.close,
+      priceReturn,
+      startSentiment: startSentiment?.value ?? null,
+      endSentiment: endSentiment?.value ?? null,
+      sentimentChange,
+      barCount: lastIndex - firstIndex + 1,
+    };
+  }
+
+  function buildMergedSentimentCsv(priceRecords, sentimentRecords) {
+    const prices = new Map(
+      (Array.isArray(priceRecords) ? priceRecords : []).map((record) => [record.time, record])
+    );
+    const lines = ["date,qqq_close,qqq_change_pct,fear_greed,fear_greed_change,classification"];
+    let previousPrice = null;
+    let previousSentiment = null;
+    (Array.isArray(sentimentRecords) ? sentimentRecords : []).forEach((sentiment) => {
+      const price = prices.get(sentiment.time);
+      if (!price || !Number.isFinite(price.close) || !Number.isFinite(sentiment.value)) return;
+      const priceChange = Number.isFinite(previousPrice)
+        ? ((price.close / previousPrice) - 1) * 100
+        : "";
+      const sentimentChange = Number.isFinite(previousSentiment)
+        ? sentiment.value - previousSentiment
+        : "";
+      const classification = String(sentiment.classification || "").replaceAll('"', '""');
+      lines.push([
+        sentiment.time,
+        Number(price.close).toFixed(4),
+        priceChange === "" ? "" : priceChange.toFixed(4),
+        Number(sentiment.value).toFixed(4),
+        sentimentChange === "" ? "" : sentimentChange.toFixed(4),
+        `"${classification}"`,
+      ].join(","));
+      previousPrice = price.close;
+      previousSentiment = sentiment.value;
+    });
+    return `${lines.join("\n")}\n`;
+  }
+
+  return Object.freeze({
+    aggregateRecords,
+    aggregateSentimentRecords,
+    buildMergedSentimentCsv,
+    buildRangeComparison,
+    buildVolumeProfile,
+    lowerBoundByTime,
+    normaliseRecords,
+  });
 });

@@ -13,6 +13,11 @@
       up: "rgba(45, 212, 191, 0.34)",
       down: "rgba(255, 91, 105, 0.32)",
     }),
+    sentiment: Object.freeze({
+      title: "Fear & Greed",
+      color: "#f0b429",
+      lineWidth: 2,
+    }),
     indicators: Object.freeze({
       sma120: Object.freeze({
         field: "sma120",
@@ -116,10 +121,12 @@
   );
 
   const PERIOD_OFFSETS = Object.freeze({
+    "1M": Object.freeze({ months: 1 }),
     "3M": Object.freeze({ months: 3 }),
     "6M": Object.freeze({ months: 6 }),
     "1Y": Object.freeze({ years: 1 }),
-    "2Y": Object.freeze({ years: 2 }),
+    "3Y": Object.freeze({ years: 3 }),
+    "5Y": Object.freeze({ years: 5 }),
   });
 
   const REQUIRED_RECORD_FIELDS = Object.freeze([
@@ -147,6 +154,11 @@
       this.summaryBySymbol = new Map();
       this.recordByDate = new Map();
       this.recordIndexByDate = new Map();
+      this.sentimentByDate = new Map();
+      this.sentimentRaw = [];
+      this.sentimentAnalytics = null;
+      this.sentimentMarkers = null;
+      this.dataVersion = "";
       this.rawDataBySymbol = new Map();
       this.comparisonSeries = new Map();
       this.comparisonColours = new Map();
@@ -173,6 +185,10 @@
         theme: this.readThemePreference(),
         volumeVisible: indicatorPreferences.volumeVisible,
         indicators: indicatorPreferences.indicators,
+        sentimentVisible: false,
+        sentimentStyle: indicatorPreferences.sentiment,
+        selectedFearThreshold: "25",
+        fearMarkersVisible: true,
       };
     }
 
@@ -217,6 +233,27 @@
         compareMessage: byId("compare-message"),
         compareCount: byId("compare-count"),
         comparisonLegend: byId("comparison-legend"),
+        sentimentOverview: byId("sentiment-overview"),
+        sentimentAnalysis: byId("sentiment-analysis"),
+        sentimentCurrent: byId("sentiment-current"),
+        sentimentClassification: byId("sentiment-classification"),
+        sentimentAsOf: byId("sentiment-as-of"),
+        sentimentPrevious: byId("sentiment-previous"),
+        sentimentChange1D: byId("sentiment-change-1d"),
+        sentimentChange5D: byId("sentiment-change-5d"),
+        sentimentChange20D: byId("sentiment-change-20d"),
+        sentimentAlert: byId("sentiment-alert"),
+        sentimentChartToggle: byId("sentiment-chart-toggle"),
+        sentimentLegendButton: byId("sentiment-legend-button"),
+        legendSentiment: byId("legend-sentiment"),
+        analysisPeriod: byId("analysis-period"),
+        fearOccurrences: byId("fear-occurrences"),
+        fearForwardReturns: byId("fear-forward-returns"),
+        fearHistoryBody: byId("fear-history-body"),
+        correlationTable: byId("correlation-table"),
+        sentimentShockSummary: byId("sentiment-shock-summary"),
+        sentimentCsvExport: byId("sentiment-csv-export"),
+        fearMarkerToggle: byId("fear-marker-toggle"),
         crosshairPanel: byId("crosshair-panel"),
         indicatorSettingsToggle: byId("indicator-settings-toggle"),
         indicatorSettings: byId("indicator-settings"),
@@ -230,6 +267,7 @@
         measurementChange: byId("measurement-change"),
         measurementPrices: byId("measurement-prices"),
         measurementDates: byId("measurement-dates"),
+        measurementSentiment: byId("measurement-sentiment"),
         measurementSummary: byId("measurement-summary"),
         cursorDate: byId("cursor-date"),
         cursorFields: {
@@ -239,6 +277,7 @@
           close: byId("cursor-close"),
           changeRate: byId("cursor-change-rate"),
           volume: byId("cursor-volume"),
+          sentiment: byId("cursor-sentiment"),
           sma120: byId("cursor-sma120"),
           sma200: byId("cursor-sma200"),
           vwma100: byId("cursor-vwma100"),
@@ -246,6 +285,7 @@
           bbBasis: byId("cursor-bb-basis"),
           bbLower: byId("cursor-bb-lower"),
         },
+        cursorSentimentField: byId("cursor-sentiment-field"),
         legend: {
           sma120: byId("legend-sma120"),
           sma200: byId("legend-sma200"),
@@ -273,10 +313,9 @@
       }
 
       this.createChart();
-      const [summaries, metadata] = await Promise.all([
-        this.fetchJson("./data/stocks.json"),
-        this.fetchJson("./data/metadata.json"),
-      ]);
+      const metadata = await this.fetchJson("./data/metadata.json", { versioned: false });
+      this.dataVersion = metadata?.dataVersion || metadata?.generatedAt || "";
+      const summaries = await this.fetchJson("./data/stocks.json");
 
       if (!Array.isArray(summaries) || summaries.length === 0) {
         throw new Error("종목 요약 데이터가 비어 있습니다.");
@@ -290,6 +329,7 @@
       this.renderMetadata(metadata);
       this.populateStockSelector(summaries);
       this.populateComparisonSelector(summaries);
+      await this.loadSentimentAssets(metadata);
 
       const firstAvailable = summaries.find((summary) => summary.dataPath);
       const defaultSummary = summaries.find(
@@ -350,7 +390,14 @@
           borderVisible: false,
           scaleMargins: { top: 0.08, bottom: 0.24 },
         },
-        leftPriceScale: { visible: false },
+        leftPriceScale: {
+          visible: false,
+          alignLabels: true,
+          entireTextOnly: true,
+          minimumWidth: this.isMobile ? 62 : 92,
+          borderVisible: false,
+          scaleMargins: { top: 0.08, bottom: 0.24 },
+        },
         timeScale: {
           borderVisible: false,
           timeVisible: false,
@@ -415,6 +462,28 @@
         });
       });
 
+      this.series.sentiment = this.chart.addSeries(library.LineSeries, {
+        priceScaleId: "right",
+        color: this.state.sentimentStyle.color,
+        lineWidth: this.state.sentimentStyle.lineWidth,
+        visible: false,
+        priceLineVisible: false,
+        lastValueVisible: true,
+        crosshairMarkerVisible: true,
+        crosshairMarkerRadius: 4,
+        priceFormat: {
+          type: "custom",
+          formatter: (value) => `${Math.round(value)}`,
+          minMove: 0.01,
+        },
+        autoscaleInfoProvider: () => ({
+          priceRange: { minValue: 0, maxValue: 100 },
+        }),
+      });
+      if (typeof library.createSeriesMarkers === "function") {
+        this.sentimentMarkers = library.createSeriesMarkers(this.series.sentiment, []);
+      }
+
       this.chart.subscribeCrosshairMove((parameter) => this.handleCrosshairMove(parameter));
       this.chart
         .timeScale()
@@ -430,14 +499,26 @@
         const width = Math.max(320, Math.floor(this.refs.chart.clientWidth));
         const height = Math.max(480, Math.floor(this.refs.chart.clientHeight));
         const nextIsMobile = width <= 760;
+        const sentimentActive = this.state.sentimentVisible && this.state.symbol === "QQQ";
+        const rightWidth = sentimentActive ? (nextIsMobile ? 58 : 76) : (nextIsMobile ? 84 : 124);
+        const leftWidth = nextIsMobile ? 72 : 108;
 
         this.chart.resize(width, height);
         document.documentElement.style.setProperty(
           "--price-scale-width",
-          `${nextIsMobile ? 84 : 124}px`
+          `${rightWidth}px`
+        );
+        document.documentElement.style.setProperty(
+          "--left-price-scale-width",
+          `${leftWidth}px`
         );
         this.chart.priceScale("right").applyOptions({
-          minimumWidth: nextIsMobile ? 84 : 124,
+          minimumWidth: rightWidth,
+          alignLabels: true,
+          entireTextOnly: true,
+        });
+        this.chart.priceScale("left").applyOptions({
+          minimumWidth: leftWidth,
           alignLabels: true,
           entireTextOnly: true,
         });
@@ -502,7 +583,9 @@
       const plot = this.getPlotSize();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
-      const isPriceScale = x > plot.width && x <= rect.width && y >= 0 && y <= plot.height;
+      const isPriceScale = (
+        x < plot.leftOffset || x > plot.leftOffset + plot.width
+      ) && x >= 0 && x <= rect.width && y >= 0 && y <= plot.height;
       if (!isPriceScale) return;
 
       this.blockNativeChartGesture(event);
@@ -610,7 +693,9 @@
 
     beginShiftMeasurement(point) {
       const startIndex = this.getDataIndexAtCoordinate(point.x);
-      const startPrice = this.series.candles.coordinateToPrice(point.y);
+      const startPrice = this.state.sentimentVisible
+        ? this.state.data[startIndex]?.close
+        : this.series.candles.coordinateToPrice(point.y);
       if (startIndex === null || !Number.isFinite(startPrice)) return;
 
       this.clearMeasurement({ announce: false });
@@ -628,7 +713,9 @@
       if (!interaction) return;
 
       const endIndex = this.getDataIndexAtCoordinate(point.x);
-      const endPrice = this.series.candles.coordinateToPrice(point.y);
+      const endPrice = this.state.sentimentVisible
+        ? this.state.data[endIndex]?.close
+        : this.series.candles.coordinateToPrice(point.y);
       if (endIndex === null || !Number.isFinite(endPrice)) return;
 
       const startRecord = this.state.data[interaction.startIndex];
@@ -639,9 +726,11 @@
       const sign = isNegative ? "−" : "+";
       const barCount = Math.abs(endIndex - interaction.startIndex) + 1;
 
-      const left = Math.min(interaction.startPoint.x, point.x);
+      const startScreenX = interaction.startPoint.screenX ?? interaction.startPoint.x;
+      const endScreenX = point.screenX ?? point.x;
+      const left = Math.min(startScreenX, endScreenX);
       const top = Math.min(interaction.startPoint.y, point.y);
-      const width = Math.abs(point.x - interaction.startPoint.x);
+      const width = Math.abs(endScreenX - startScreenX);
       const height = Math.abs(point.y - interaction.startPoint.y);
       Object.assign(this.refs.measurementBox.style, {
         left: `${left}px`,
@@ -657,17 +746,36 @@
       this.refs.measurementPrices.textContent = `$${this.formatPrice(interaction.startPrice)} → $${this.formatPrice(endPrice)} · ${barCount}봉`;
       this.refs.measurementDates.textContent = `${startRecord.time} → ${endRecord.time}`;
 
+      const comparison = this.state.sentimentVisible
+        ? window.MarketLensUtils.buildRangeComparison(
+            this.state.data,
+            this.sentimentByDate,
+            interaction.startIndex,
+            endIndex
+          )
+        : null;
+      if (comparison && Number.isFinite(comparison.sentimentChange)) {
+        const sentimentSign = comparison.sentimentChange > 0 ? "+" : comparison.sentimentChange < 0 ? "−" : "";
+        this.refs.measurementSentiment.textContent =
+          `F&G ${this.formatSentiment(comparison.startSentiment)} → ${this.formatSentiment(comparison.endSentiment)} · ${sentimentSign}${this.formatPrice(Math.abs(comparison.sentimentChange))}pt`;
+        this.refs.measurementSentiment.hidden = false;
+      } else {
+        this.refs.measurementSentiment.hidden = true;
+      }
+
       const plot = this.getPlotSize();
       const labelWidth = Math.min(this.refs.measurementLabel.offsetWidth || 250, plot.width - 16);
       const labelHeight = this.refs.measurementLabel.offsetHeight || 72;
-      const preferredLeft = point.x + 12 + labelWidth <= plot.width
-        ? point.x + 12
-        : point.x - labelWidth - 12;
+      const pointScreenX = point.screenX ?? point.x;
+      const plotRight = plot.leftOffset + plot.width;
+      const preferredLeft = pointScreenX + 12 + labelWidth <= plotRight
+        ? pointScreenX + 12
+        : pointScreenX - labelWidth - 12;
       const preferredTop = point.y - labelHeight - 12 >= 0
         ? point.y - labelHeight - 12
         : point.y + 12;
       Object.assign(this.refs.measurementLabel.style, {
-        left: `${this.clamp(preferredLeft, 8, Math.max(8, plot.width - labelWidth - 8))}px`,
+        left: `${this.clamp(preferredLeft, plot.leftOffset + 8, Math.max(plot.leftOffset + 8, plotRight - labelWidth - 8))}px`,
         top: `${this.clamp(preferredTop, 8, Math.max(8, plot.height - labelHeight - 8))}px`,
       });
 
@@ -679,6 +787,7 @@
         change,
         changePercent,
         barCount,
+        sentimentChange: comparison?.sentimentChange ?? null,
       };
       this.refs.measurementSummary.textContent = `${startRecord.time}부터 ${endRecord.time}까지 ${barCount}개 ${INTERVAL_LABELS[this.state.selectedInterval]}, ${sign}${this.formatPrice(Math.abs(changePercent))}퍼센트`;
     }
@@ -782,9 +891,15 @@
       const timeScale = this.chart?.timeScale();
       const width = timeScale?.width() || this.refs.chart.clientWidth;
       const height = this.refs.chart.clientHeight - (timeScale?.height() || 0);
+      const rightWidth = this.chart?.priceScale("right")?.width?.() || 0;
+      const leftOffset = this.state.sentimentVisible && this.state.symbol === "QQQ"
+        ? Math.max(0, this.refs.chart.clientWidth - width - rightWidth)
+        : 0;
       return {
         width: Math.max(1, width),
         height: Math.max(1, height),
+        leftOffset,
+        rightWidth,
       };
     }
 
@@ -793,10 +908,15 @@
       const plot = this.getPlotSize();
       const rawX = event.clientX - rect.left;
       const rawY = event.clientY - rect.top;
+      const plotX = rawX - plot.leftOffset;
       return {
-        x: clampToPlot ? this.clamp(rawX, 0, plot.width) : rawX,
+        x: clampToPlot ? this.clamp(plotX, 0, plot.width) : plotX,
         y: clampToPlot ? this.clamp(rawY, 0, plot.height) : rawY,
-        insidePlot: rawX >= 0 && rawX <= plot.width && rawY >= 0 && rawY <= plot.height,
+        screenX: clampToPlot
+          ? plot.leftOffset + this.clamp(plotX, 0, plot.width)
+          : rawX,
+        insidePlot:
+          plotX >= 0 && plotX <= plot.width && rawY >= 0 && rawY <= plot.height,
       };
     }
 
@@ -813,6 +933,7 @@
       this.refs.measurementLayer.hidden = true;
       this.refs.measurementLayer.setAttribute("aria-hidden", "true");
       this.refs.measurementLayer.classList.remove("is-negative");
+      this.refs.measurementSentiment.hidden = true;
       if (announce) this.refs.measurementSummary.textContent = "측정값을 지웠습니다.";
     }
 
@@ -824,6 +945,7 @@
     resetPriceScale({ announce = true } = {}) {
       if (!this.series.candles) return;
       this.series.candles.priceScale().setAutoScale(true);
+      if (this.state.sentimentVisible) this.chart.priceScale("right").setAutoScale(true);
       this.scheduleVolumeProfileRender();
       if (announce) {
         this.refs.measurementSummary.textContent = "가격축을 자동 맞춤으로 복원했습니다.";
@@ -865,6 +987,9 @@
 
     bindControls() {
       this.refs.stockSelect.addEventListener("change", () => {
+        if (this.refs.stockSelect.value !== "QQQ" && this.state.sentimentVisible) {
+          this.setSentimentVisible(false, { switchSymbol: false });
+        }
         void this.loadSymbol(this.refs.stockSelect.value);
       });
 
@@ -922,6 +1047,33 @@
       document.querySelector("[data-volume-visible]")?.addEventListener("change", (event) => {
         this.state.volumeVisible = event.currentTarget.checked;
         this.applyIndicatorStyles();
+      });
+
+      document.querySelector("[data-sentiment-visible]")?.addEventListener("change", (event) => {
+        void this.setSentimentVisible(event.currentTarget.checked);
+      });
+      document.querySelector("[data-sentiment-color]")?.addEventListener("input", (event) => {
+        this.updateSentimentStyle({ color: event.currentTarget.value });
+      });
+      document.querySelector("[data-sentiment-width]")?.addEventListener("change", (event) => {
+        this.updateSentimentStyle({ lineWidth: Number(event.currentTarget.value) });
+      });
+      this.refs.sentimentChartToggle.addEventListener("click", () => {
+        void this.setSentimentVisible(!this.state.sentimentVisible);
+      });
+      this.refs.sentimentLegendButton.addEventListener("click", () => {
+        this.selectedIndicatorKey = "sentiment";
+        this.refs.indicatorSettingsHelp.textContent =
+          "Fear & Greed 선택됨 · 표시·색상·굵기를 조절합니다.";
+        this.setIndicatorSettingsOpen(true);
+      });
+      document.querySelectorAll("[data-fear-threshold]").forEach((button) => {
+        button.addEventListener("click", () => this.selectFearThreshold(button.dataset.fearThreshold));
+      });
+      this.refs.sentimentCsvExport.addEventListener("click", () => this.exportSentimentCsv());
+      this.refs.fearMarkerToggle.addEventListener("change", () => {
+        this.state.fearMarkersVisible = this.refs.fearMarkerToggle.checked;
+        this.renderFearMarkers();
       });
 
       document.querySelectorAll("[data-legend-toggle]").forEach((button) => {
@@ -1053,6 +1205,8 @@
 
       this.clearMeasurement({ announce: false });
       this.setSeriesData(records);
+      this.refreshSentimentSeries(records);
+      this.applySentimentScaleLayout();
       this.renderDataRange(records);
       this.renderLatestLegend(records[records.length - 1]);
       this.renderCrosshairInfo(records[records.length - 1], true);
@@ -1080,6 +1234,20 @@
         axisLabelVisible: true,
         title: this.state.symbol || "종가",
       });
+
+      if (this.state.sentimentVisible) {
+        [25, 45, 55, 75].forEach((value) => {
+          this.addPriceLine(this.series.sentiment, {
+            price: value,
+            color: "rgba(240, 180, 41, 0.30)",
+            lineWidth: 1,
+            lineStyle: library.LineStyle.Dashed,
+            lineVisible: true,
+            axisLabelVisible: true,
+            title: String(value),
+          });
+        });
+      }
 
       if (this.isMobile) return;
 
@@ -1148,6 +1316,362 @@
       this.applyIndicatorStyles();
     }
 
+    updateSentimentStyle(patch) {
+      const next = { ...this.state.sentimentStyle };
+      if (typeof patch.color === "string" && HEX_COLOUR_PATTERN.test(patch.color)) {
+        next.color = patch.color.toLowerCase();
+      }
+      if (Number.isFinite(patch.lineWidth)) {
+        next.lineWidth = Math.min(4, Math.max(1, Math.round(patch.lineWidth)));
+      }
+      this.state.sentimentStyle = next;
+      this.applyIndicatorStyles();
+      this.renderFearMarkers();
+    }
+
+    async loadSentimentAssets(metadata) {
+      const sentimentMetadata = metadata?.sentiment;
+      const dataPath = sentimentMetadata?.dataPath;
+      const analyticsPath = sentimentMetadata?.analyticsPath;
+      if (
+        dataPath !== "./data/sentiment/fear-greed.json" ||
+        analyticsPath !== "./data/sentiment/analytics.json"
+      ) {
+        console.warn("Sentiment 데이터 경로가 없거나 안전하지 않습니다.");
+        return;
+      }
+
+      try {
+        const [payload, analytics] = await Promise.all([
+          this.fetchJson(dataPath),
+          this.fetchJson(analyticsPath),
+        ]);
+        this.sentimentRaw = this.validateSentimentRecords(payload?.records);
+        if (!analytics || typeof analytics !== "object" || !analytics.commonPeriod) {
+          throw new Error("Sentiment 분석 JSON이 올바르지 않습니다.");
+        }
+        this.sentimentAnalytics = analytics;
+        this.refs.sentimentOverview.hidden = false;
+        this.refs.sentimentAnalysis.hidden = false;
+        this.renderSentimentOverview();
+        this.renderSentimentAnalysis();
+        if (sentimentMetadata.updateStatus === "error") {
+          this.refs.sentimentAlert.hidden = false;
+          this.refs.sentimentAlert.textContent =
+            `최근 수집 실패 · 마지막 성공 ${sentimentMetadata.lastSuccessfulUpdate || payload.lastAvailableDate}`;
+        }
+      } catch (error) {
+        console.error("Sentiment 데이터를 표시하지 못했습니다.", error);
+        this.refs.sentimentOverview.hidden = false;
+        this.refs.sentimentAlert.hidden = false;
+        this.refs.sentimentAlert.textContent =
+          `Market Sentiment 데이터를 불러오지 못했습니다. 기존 주가 차트는 계속 사용할 수 있습니다.`;
+      }
+    }
+
+    validateSentimentRecords(payload) {
+      if (!Array.isArray(payload) || payload.length < 2) {
+        throw new Error("Fear & Greed 데이터는 2건 이상의 배열이어야 합니다.");
+      }
+      let previousTime = "";
+      return payload.map((record, index) => {
+        if (
+          !record ||
+          typeof record.time !== "string" ||
+          !/^\d{4}-\d{2}-\d{2}$/.test(record.time) ||
+          record.time <= previousTime ||
+          !Number.isFinite(record.value) ||
+          record.value < 0 ||
+          record.value > 100 ||
+          typeof record.classification !== "string"
+        ) {
+          throw new Error(`Fear & Greed ${index + 1}번 항목이 유효하지 않습니다.`);
+        }
+        previousTime = record.time;
+        return { ...record };
+      });
+    }
+
+    async setSentimentVisible(visible, { switchSymbol = true } = {}) {
+      const shouldShow = Boolean(visible) && this.sentimentRaw.length > 0;
+      if (shouldShow && switchSymbol && this.state.symbol !== "QQQ") {
+        await this.loadSymbol("QQQ");
+      }
+      this.state.sentimentVisible = shouldShow && this.state.symbol === "QQQ";
+      this.applySentimentScaleLayout();
+      this.refreshSentimentSeries();
+      this.applyIndicatorStyles();
+      this.refs.sentimentChartToggle.setAttribute(
+        "aria-pressed",
+        String(this.state.sentimentVisible)
+      );
+      this.refs.sentimentChartToggle.textContent = this.state.sentimentVisible
+        ? "Fear & Greed 숨기기"
+        : "QQQ와 차트 비교";
+      this.refs.cursorSentimentField.hidden = !this.state.sentimentVisible;
+      this.refs.sentimentLegendButton.hidden = !this.state.sentimentVisible;
+      this.resetPriceScale({ announce: false });
+      this.selectPeriod(this.state.selectedPeriod, { updateButtons: true });
+      this.renderFearMarkers();
+      this.scheduleVolumeProfileRender();
+      this.refs.measurementSummary.textContent = this.state.sentimentVisible
+        ? "QQQ는 왼쪽 USD축, Fear & Greed는 오른쪽 0~100축에 표시됩니다."
+        : "Fear & Greed 비교를 숨겼습니다.";
+    }
+
+    applySentimentScaleLayout() {
+      if (!this.chart || !this.series.candles) return;
+      const active = this.state.sentimentVisible && this.state.symbol === "QQQ";
+      const priceScaleId = active ? "left" : "right";
+      ["candles", ...Object.keys(CHART_PALETTE.indicators)].forEach((key) => {
+        this.series[key]?.applyOptions({ priceScaleId });
+      });
+      this.series.candles.applyOptions({
+        priceFormat: active
+          ? {
+              type: "custom",
+              formatter: (value) => `$${PRICE_FORMATTER.format(value)}`,
+              minMove: 0.01,
+            }
+          : { type: "price", precision: 2, minMove: 0.01 },
+      });
+      this.chart.priceScale("left").applyOptions({
+        visible: active,
+        minimumWidth: this.isMobile ? 72 : 108,
+        scaleMargins: { top: 0.08, bottom: 0.24 },
+      });
+      this.chart.priceScale("right").applyOptions({
+        visible: true,
+        minimumWidth: active ? (this.isMobile ? 58 : 76) : (this.isMobile ? 84 : 124),
+        scaleMargins: active ? { top: 0.04, bottom: 0.04 } : { top: 0.08, bottom: 0.24 },
+      });
+      document.documentElement.style.setProperty(
+        "--price-scale-width",
+        `${active ? (this.isMobile ? 58 : 76) : (this.isMobile ? 84 : 124)}px`
+      );
+      document.documentElement.style.setProperty(
+        "--left-price-scale-width",
+        `${this.isMobile ? 72 : 108}px`
+      );
+      this.refs.chart.closest(".chart-shell")?.classList.toggle("has-sentiment", active);
+      this.series.sentiment?.applyOptions({ visible: active, priceScaleId: "right" });
+      this.chart.priceScale("right").setAutoScale(true);
+      this.setScaleMode(this.state.scaleMode, { persist: false, announce: false });
+    }
+
+    refreshSentimentSeries(records = this.state.data) {
+      if (!this.series.sentiment) return;
+      const aligned = window.MarketLensUtils.aggregateSentimentRecords(
+        this.sentimentRaw,
+        records,
+        this.state.selectedInterval
+      );
+      this.sentimentByDate = new Map(aligned.map((record) => [record.time, record]));
+      this.series.sentiment.setData(
+        aligned.map((record) => ({ time: record.time, value: record.value }))
+      );
+      const latest = aligned[aligned.length - 1];
+      this.refs.legendSentiment.textContent = latest
+        ? `${this.formatSentiment(latest.value)} · ${latest.classification}`
+        : "—";
+      this.renderFearMarkers();
+    }
+
+    renderSentimentOverview() {
+      const current = this.sentimentAnalytics?.current;
+      if (!current) return;
+      this.refs.sentimentCurrent.textContent = this.formatSentiment(current.value);
+      this.refs.sentimentClassification.textContent = current.classification || "—";
+      this.refs.sentimentAsOf.textContent = `${current.date} 기준`;
+      this.refs.sentimentPrevious.textContent = this.formatSentiment(current.previousClose);
+      this.renderPointChange(this.refs.sentimentChange1D, current.changes?.["1D"]);
+      this.renderPointChange(this.refs.sentimentChange5D, current.changes?.["5D"]);
+      this.renderPointChange(this.refs.sentimentChange20D, current.changes?.["20D"]);
+      this.refs.sentimentOverview.dataset.classification =
+        String(current.classification || "").toLowerCase().replaceAll(" ", "-");
+      if (current.rapidDrop) {
+        this.refs.sentimentAlert.hidden = false;
+        this.refs.sentimentAlert.textContent =
+          `빠른 심리 하락 감지 · 최근 5거래일 ${this.formatSigned(current.changes?.["5D"], "pt")}`;
+      }
+    }
+
+    renderPointChange(element, value) {
+      element.textContent = this.formatSigned(value, "pt");
+      element.classList.toggle("is-positive", Number(value) > 0);
+      element.classList.toggle("is-negative", Number(value) < 0);
+    }
+
+    renderSentimentAnalysis() {
+      const period = this.sentimentAnalytics?.commonPeriod;
+      if (!period) return;
+      this.refs.analysisPeriod.textContent =
+        `공통 관측 ${period.from} ~ ${period.through} · ${INTEGER_FORMATTER.format(period.observations)}거래일`;
+      this.selectFearThreshold(this.state.selectedFearThreshold);
+      this.renderCorrelations();
+      this.renderSentimentShocks();
+    }
+
+    selectFearThreshold(threshold) {
+      const data = this.sentimentAnalytics?.thresholds?.[threshold];
+      if (!data) return;
+      this.state.selectedFearThreshold = threshold;
+      document.querySelectorAll("[data-fear-threshold]").forEach((button) => {
+        const active = button.dataset.fearThreshold === threshold;
+        button.classList.toggle("is-active", active);
+        button.setAttribute("aria-pressed", String(active));
+      });
+      this.refs.fearOccurrences.textContent = `${INTEGER_FORMATTER.format(data.occurrences)}회`;
+      const horizons = ["5D", "20D", "60D", "120D", "250D"];
+      this.refs.fearForwardReturns.replaceChildren(
+        ...horizons.map((horizon) => {
+          const wrapper = document.createElement("div");
+          const term = document.createElement("dt");
+          const value = document.createElement("dd");
+          term.textContent = horizon;
+          value.textContent = this.formatSigned(data.averageReturns?.[horizon], "%");
+          value.className = this.directionClass(data.averageReturns?.[horizon]);
+          value.title = `완료 표본 ${data.completedSamples?.[horizon] ?? 0}건`;
+          wrapper.append(term, value);
+          return wrapper;
+        })
+      );
+      this.renderFearHistory(data.events || []);
+      this.renderFearMarkers();
+    }
+
+    renderFearHistory(events) {
+      const rows = events.map((event) => {
+        const row = document.createElement("tr");
+        row.tabIndex = 0;
+        row.setAttribute("role", "button");
+        row.setAttribute("aria-label", `${event.date} 차트로 이동`);
+        const values = [
+          event.date,
+          this.formatSentiment(event.fearGreed),
+          `$${this.formatPrice(event.qqqClose)}`,
+          this.formatSigned(event.forwardReturns?.["20D"], "%"),
+          this.formatSigned(event.forwardReturns?.["60D"], "%"),
+          this.formatSigned(event.forwardReturns?.["120D"], "%"),
+        ];
+        values.forEach((text, index) => {
+          const cell = document.createElement("td");
+          cell.textContent = text;
+          if (index >= 3) cell.className = this.directionClass(event.forwardReturns?.[["20D", "60D", "120D"][index - 3]]);
+          row.append(cell);
+        });
+        const activate = () => void this.focusSentimentEvent(event.date);
+        row.addEventListener("click", activate);
+        row.addEventListener("keydown", (keyboardEvent) => {
+          if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
+            keyboardEvent.preventDefault();
+            activate();
+          }
+        });
+        return row;
+      });
+      this.refs.fearHistoryBody.replaceChildren(...rows);
+    }
+
+    renderCorrelations() {
+      const correlations = this.sentimentAnalytics?.correlations;
+      if (!correlations) return;
+      const table = document.createElement("table");
+      table.innerHTML = "<thead><tr><th>기간</th><th>점수↔가격</th><th>Δ점수↔수익률</th></tr></thead>";
+      const body = document.createElement("tbody");
+      ["30D", "90D", "1Y", "3Y", "MAX"].forEach((label) => {
+        const row = document.createElement("tr");
+        [
+          label,
+          this.formatCorrelation(correlations.levels?.[label]),
+          this.formatCorrelation(correlations.changesVsReturns?.[label]),
+        ].forEach((text) => {
+          const cell = document.createElement("td");
+          cell.textContent = text;
+          row.append(cell);
+        });
+        body.append(row);
+      });
+      table.append(body);
+      this.refs.correlationTable.replaceChildren(table);
+    }
+
+    renderSentimentShocks() {
+      const shocks = this.sentimentAnalytics?.sentimentShocks;
+      if (!shocks) return;
+      const cards = [
+        ["drop", "5D −15pt 이하"],
+        ["rise", "5D +15pt 이상"],
+      ].map(([key, label]) => {
+        const data = shocks[key];
+        const wrapper = document.createElement("div");
+        wrapper.className = `shock-row ${key}`;
+        const title = document.createElement("strong");
+        title.textContent = `${label} · ${data?.occurrences ?? 0}회`;
+        const metrics = document.createElement("span");
+        metrics.textContent = ["5D", "20D", "60D"]
+          .map((horizon) => `${horizon} ${this.formatSigned(data?.averageReturns?.[horizon], "%")}`)
+          .join(" · ");
+        wrapper.append(title, metrics);
+        return wrapper;
+      });
+      this.refs.sentimentShockSummary.replaceChildren(...cards);
+    }
+
+    renderFearMarkers() {
+      if (!this.sentimentMarkers) return;
+      const active =
+        this.state.sentimentVisible &&
+        this.state.fearMarkersVisible &&
+        this.state.selectedInterval === "1D";
+      const events = active
+        ? this.sentimentAnalytics?.thresholds?.[this.state.selectedFearThreshold]?.events || []
+        : [];
+      this.sentimentMarkers.setMarkers(
+        events
+          .filter((event) => this.sentimentByDate.has(event.date))
+          .map((event) => ({
+            time: event.date,
+            position: "belowBar",
+            color: this.state.sentimentStyle.color,
+            shape: "arrowUp",
+            text: `${Math.round(event.fearGreed)}`,
+          }))
+          .sort((left, right) => left.time.localeCompare(right.time))
+      );
+    }
+
+    async focusSentimentEvent(date) {
+      if (this.state.symbol !== "QQQ" || !this.state.sentimentVisible) {
+        await this.setSentimentVisible(true);
+      }
+      if (this.state.selectedInterval !== "1D") this.selectInterval("1D");
+      const index = window.MarketLensUtils.lowerBoundByTime(this.state.data, date);
+      const record = this.state.data[index];
+      if (!record || record.time !== date) return;
+      const from = this.state.data[Math.max(0, index - 60)].time;
+      const to = this.state.data[Math.min(this.state.data.length - 1, index + 60)].time;
+      this.chart.timeScale().setVisibleRange({ from, to });
+      this.chart.setCrosshairPosition(record.close, record.time, this.series.candles);
+      this.refs.chart.focus({ preventScroll: true });
+      this.refs.chart.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    async exportSentimentCsv() {
+      const qqq = await this.loadComparisonRecords("QQQ");
+      if (!qqq?.length || !this.sentimentRaw.length) return;
+      const csv = window.MarketLensUtils.buildMergedSentimentCsv(qqq, this.sentimentRaw);
+      const blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `qqq-fear-greed-${this.sentimentRaw.at(-1).time}.csv`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    }
+
     applyIndicatorStyles({ persist = true } = {}) {
       this.series.volume?.applyOptions({ visible: this.state.volumeVisible });
 
@@ -1157,6 +1681,11 @@
           color: style.color,
           lineWidth: style.lineWidth,
         });
+      });
+      this.series.sentiment?.applyOptions({
+        color: this.state.sentimentStyle.color,
+        lineWidth: this.state.sentimentStyle.lineWidth,
+        visible: this.state.sentimentVisible,
       });
 
       this.applyCssSeriesColours();
@@ -1168,6 +1697,15 @@
     syncIndicatorControls() {
       const volumeInput = document.querySelector("[data-volume-visible]");
       if (volumeInput) volumeInput.checked = this.state.volumeVisible;
+      const sentimentVisibility = document.querySelector("[data-sentiment-visible]");
+      const sentimentColour = document.querySelector("[data-sentiment-color]");
+      const sentimentWidth = document.querySelector("[data-sentiment-width]");
+      const sentimentRow = document.querySelector("[data-sentiment-row]");
+      if (sentimentVisibility) sentimentVisibility.checked = this.state.sentimentVisible;
+      if (sentimentColour) sentimentColour.value = this.state.sentimentStyle.color;
+      if (sentimentWidth) sentimentWidth.value = String(this.state.sentimentStyle.lineWidth);
+      sentimentRow?.classList.toggle("is-disabled", !this.state.sentimentVisible);
+      sentimentRow?.style.setProperty("--indicator-accent", this.state.sentimentStyle.color);
 
       Object.entries(this.state.indicators).forEach(([key, style]) => {
         const visibilityInput = document.querySelector(`[data-indicator-visible="${key}"]`);
@@ -1201,6 +1739,10 @@
           String(open && button.dataset.legendToggle === this.selectedIndicatorKey)
         );
       });
+      this.refs.sentimentLegendButton.setAttribute(
+        "aria-expanded",
+        String(open && this.selectedIndicatorKey === "sentiment")
+      );
       if (open) {
         this.setCompareSettingsOpen(false);
         this.syncIndicatorControls();
@@ -1210,6 +1752,10 @@
     resetIndicatorSettings() {
       this.state.volumeVisible = true;
       this.state.indicators = this.createDefaultIndicatorState();
+      this.state.sentimentStyle = {
+        color: CHART_PALETTE.sentiment.color,
+        lineWidth: CHART_PALETTE.sentiment.lineWidth,
+      };
       this.applyIndicatorStyles();
     }
 
@@ -1223,6 +1769,10 @@
       const fallback = {
         volumeVisible: true,
         indicators: this.createDefaultIndicatorState(),
+        sentiment: {
+          color: CHART_PALETTE.sentiment.color,
+          lineWidth: CHART_PALETTE.sentiment.lineWidth,
+        },
       };
 
       try {
@@ -1250,6 +1800,12 @@
         if (typeof saved.volumeVisible === "boolean") {
           fallback.volumeVisible = saved.volumeVisible;
         }
+        if (typeof saved.sentiment?.color === "string" && HEX_COLOUR_PATTERN.test(saved.sentiment.color)) {
+          fallback.sentiment.color = saved.sentiment.color.toLowerCase();
+        }
+        if (Number.isFinite(saved.sentiment?.lineWidth)) {
+          fallback.sentiment.lineWidth = Math.min(4, Math.max(1, Math.round(saved.sentiment.lineWidth)));
+        }
       } catch (error) {
         console.warn("지표 설정을 불러오지 못했습니다.", error);
       }
@@ -1263,6 +1819,7 @@
           JSON.stringify({
             volumeVisible: this.state.volumeVisible,
             indicators: this.state.indicators,
+            sentiment: this.state.sentimentStyle,
           })
         );
       } catch (error) {
@@ -1546,7 +2103,7 @@
 
     getPeriodStartTime(records) {
       if (!records.length) return "";
-      if (this.state.selectedPeriod === "ALL") return records[0].time;
+      if (this.state.selectedPeriod === "MAX") return records[0].time;
       const latestTime = records[records.length - 1].time;
       const target = new Date(`${latestTime}T00:00:00Z`);
       const offset = PERIOD_OFFSETS[this.state.selectedPeriod];
@@ -1670,7 +2227,7 @@
 
     selectPeriod(period, { updateButtons = true } = {}) {
       if (!this.chart || !this.state.data.length) return;
-      if (period !== "ALL" && !(period in PERIOD_OFFSETS)) return;
+      if (period !== "MAX" && !(period in PERIOD_OFFSETS)) return;
 
       this.state.selectedPeriod = period;
       if (updateButtons) {
@@ -1684,7 +2241,7 @@
       this.refreshComparisonSeries();
 
       window.requestAnimationFrame(() => {
-        if (period === "ALL") {
+        if (period === "MAX") {
           this.chart.timeScale().fitContent();
           this.scheduleVolumeProfileRender();
           return;
@@ -1746,6 +2303,24 @@
       fields.close.textContent = this.formatPrice(record.close);
       this.renderCursorChangeRate(record);
       fields.volume.textContent = this.formatVolume(record.volume);
+      if (this.state.sentimentVisible) {
+        const sentiment = this.sentimentByDate.get(record.time);
+        const index = this.recordIndexByDate.get(record.time);
+        const previousRecord = Number.isInteger(index) && index > 0 ? this.state.data[index - 1] : null;
+        const previousSentiment = previousRecord
+          ? this.sentimentByDate.get(previousRecord.time)
+          : null;
+        const change = sentiment && previousSentiment
+          ? sentiment.value - previousSentiment.value
+          : null;
+        fields.sentiment.textContent = sentiment
+          ? `${this.formatSentiment(sentiment.value)} · ${sentiment.classification} · ${this.formatSigned(change, "pt")}`
+          : "관측값 없음";
+        fields.sentiment.className = this.directionClass(change);
+      } else {
+        fields.sentiment.textContent = "—";
+        fields.sentiment.className = "";
+      }
       fields.sma120.textContent = this.formatPrice(record.sma120);
       fields.sma200.textContent = this.formatPrice(record.sma200);
       fields.vwma100.textContent = this.formatPrice(record.vwma100);
@@ -1895,6 +2470,7 @@
       root.setProperty("--bb-upper", this.state.indicators.bbUpper.color);
       root.setProperty("--bb-basis", this.state.indicators.bbBasis.color);
       root.setProperty("--bb-lower", this.state.indicators.bbLower.color);
+      root.setProperty("--sentiment", this.state.sentimentStyle.color);
     }
 
     readThemePreference() {
@@ -1905,10 +2481,15 @@
       }
     }
 
-    async fetchJson(path) {
+    async fetchJson(path, { versioned = true } = {}) {
       let response;
+      const requestPath = versioned && this.dataVersion
+        ? `${path}${path.includes("?") ? "&" : "?"}v=${encodeURIComponent(this.dataVersion)}`
+        : path;
       try {
-        response = await fetch(path, { cache: "no-cache" });
+        response = await fetch(requestPath, {
+          cache: versioned ? "default" : "no-store",
+        });
       } catch (error) {
         throw new Error(
           `데이터 요청에 실패했습니다. file:// 대신 로컬 HTTP 서버로 실행했는지 확인해 주세요. (${error})`
@@ -1961,6 +2542,24 @@
 
     formatPrice(value) {
       return Number.isFinite(value) ? PRICE_FORMATTER.format(value) : "—";
+    }
+
+    formatSentiment(value) {
+      return Number.isFinite(value) ? String(Math.round(value)) : "—";
+    }
+
+    formatSigned(value, suffix = "") {
+      if (!Number.isFinite(value)) return "—";
+      const sign = value > 0 ? "+" : value < 0 ? "−" : "";
+      return `${sign}${this.formatPrice(Math.abs(value))}${suffix}`;
+    }
+
+    formatCorrelation(value) {
+      return Number.isFinite(value) ? Number(value).toFixed(2) : "—";
+    }
+
+    directionClass(value) {
+      return Number(value) > 0 ? "is-positive" : Number(value) < 0 ? "is-negative" : "is-flat";
     }
 
     getContrastingTextColour(hexColour) {
